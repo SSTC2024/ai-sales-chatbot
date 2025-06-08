@@ -148,7 +148,7 @@ performance:
 
 ```
 ai-sales-chatbot/
-├── 📄 natural_language_chatbot.py   # Main application (config-enabled)
+├── 📄 chatbot.py   # Main application (config-enabled)
 ├── 📄 chatbot_config.yaml          # Configuration file
 ├── 📄 requirements.txt             # Python dependencies
 ├── 📄 setup_script.bat             # Windows automated setup
