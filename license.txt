@@ -1,0 +1,110 @@
+MIT License
+
+Copyright (c) 2024 Natural Language AI Sales ChatBot Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Third-Party Licenses and Acknowledgments:
+
+This project uses the following open-source libraries and models:
+
+1. PyTorch (BSD-3-Clause License)
+   Copyright (c) Meta Platforms, Inc. and affiliates.
+
+2. Transformers by Hugging Face (Apache License 2.0)
+   Copyright 2018- The Hugging Face team. All rights reserved.
+
+3. Sentence Transformers (Apache License 2.0)
+   Copyright 2019 Nils Reimers
+
+4. Llama Models by Meta AI (Custom License)
+   Licensed under the Llama 2 Community License Agreement
+   See: https://github.com/facebookresearch/llama/blob/main/LICENSE
+
+5. Microsoft DialoGPT (MIT License)
+   Copyright (c) Microsoft Corporation.
+
+6. EasyOCR (Apache License 2.0)
+   Copyright (c) 2020 JaidedAI
+
+7. Beautiful Soup (MIT License)
+   Copyright (c) 2004-2023 Leonard Richardson
+
+8. Requests (Apache License 2.0)
+   Copyright 2019 Kenneth Reitz
+
+9. NumPy (BSD-3-Clause License)
+   Copyright (c) 2005-2023, NumPy Developers.
+
+10. Pandas (BSD-3-Clause License)
+    Copyright (c) 2008-2023, AQR Capital Management, LLC, Lambda Foundry, Inc. and PyData Development Team.
+
+11. PyYAML (MIT License)
+    Copyright (c) 2017-2021 Ingy döt Net
+    Copyright (c) 2006-2016 Kirill Simonov
+
+12. Scikit-learn (BSD-3-Clause License)
+    Copyright (c) 2007-2023 The scikit-learn developers.
+
+For the full text of these licenses, please refer to the respective project repositories.
+
+Hardware and Software Acknowledgments:
+
+- NVIDIA Corporation for CUDA toolkit and GPU computing platform
+- Microsoft for Windows operating system support
+- Python Software Foundation for the Python programming language
+
+Model Acknowledgments:
+
+- Meta AI for Llama language models
+- Hugging Face for hosting and model infrastructure
+- Sentence Transformers community for embedding models
+- Microsoft Research for DialoGPT models
+
+Disclaimer:
+
+This software is designed for educational and research purposes. Users are responsible
+for ensuring compliance with all applicable laws and regulations when using this
+software in commercial or production environments.
+
+The AI models used in this software may generate responses based on their training
+data. Users should review and validate all generated content before use in
+business-critical applications.
+
+GPU Requirements:
+
+This software is optimized for NVIDIA GPUs with CUDA support. Performance on other
+hardware configurations may vary. Minimum hardware requirements are provided in
+the documentation.
+
+Data Privacy:
+
+This software processes user inputs and conversations. Users are responsible for
+ensuring compliance with privacy laws and regulations (GDPR, CCPA, etc.) when
+handling personal or sensitive data.
+
+Support and Contributions:
+
+This project welcomes contributions from the community. Please see CONTRIBUTING.md
+for guidelines on how to contribute to this project.
+
+For support, please refer to the documentation in the docs/ directory or file
+an issue on the project repository.

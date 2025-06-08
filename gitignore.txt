@@ -1,0 +1,272 @@
+# Natural Language AI Sales ChatBot - Git Ignore File
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+chatbot_env/
+
+# PyTorch and ML Models
+*.pth
+*.bin
+*.safetensors
+models/
+.cache/
+torch_extensions/
+
+# Hugging Face Cache
+.cache/
+huggingface/
+transformers_cache/
+
+# Database Files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+chatbot_data.db
+data_backup.db
+
+# Configuration (if contains sensitive data)
+# chatbot_config.yaml  # Uncomment if config contains API keys
+config/local_config.yaml
+config/production_config.yaml
+.env.local
+.env.production
+
+# Log Files
+logs/
+*.log
+chatbot.log
+error.log
+debug.log
+
+# Data Files (uncomment if you don't want to track training data)
+# data/
+# data/excel/
+# data/pdf/
+# data/word/
+# data/images/
+
+# Backup Files
+backups/
+*.backup
+*.bak
+*_backup.*
+
+# Temporary Files
+temp/
+tmp/
+*.tmp
+*.temp
+*~
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.metadata
+.pydevproject
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Coverage Reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django (if used for web interface)
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask (if used for web interface)
+instance/
+.webassets-cache
+
+# Scrapy (if used for web scraping)
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Environments
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# AI Model Specific
+# Large model files (if accidentally added)
+*.model
+*.onnx
+*.tflite
+*.h5
+*.pkl
+*.joblib
+
+# GPU Monitoring Files
+nvidia-smi.log
+gpu_stats.log
+
+# Performance Profiling
+*.prof
+*.cprofile
+
+# Analytics Exports
+analytics_export_*.csv
+conversation_export_*.csv
+performance_report_*.pdf
+
+# Custom User Data
+user_uploads/
+customer_data/
+private_documents/
+
+# API Keys and Secrets (if stored in files)
+api_keys.txt
+secrets.json
+.secrets
+credentials.json
+
+# Windows Specific
+*.exe
+*.msi
+*.lnk
+
+# Chat Export Files
+chat_history_*.txt
+conversation_backup_*.json
+
+# OCR Temporary Files
+ocr_temp/
+processed_images/
+
+# Search Index Files
+search_index/
+vector_db/
+faiss_index/
+
+# Monitoring and Metrics
+metrics/
+monitoring_data/
+performance_logs/
+
+# Development and Testing
+test_output/
+test_results/
+.coverage
+pytest.ini
+tox.ini
+
+# Documentation Build
+docs/build/
+docs/_build/
+site/
+
+# Local Configuration Override
+local_config/
+dev_config/
+personal_config.yaml
+
+# Temporary Download Files
+downloads/
+temp_downloads/
+
+# GPU Memory Dumps
+*.gpu_dump
+gpu_memory_*.log
+
+# Error Reports
+error_reports/
+crash_dumps/
+core.*
+
+# Custom Scripts (if they contain sensitive info)
+custom_scripts/
+personal_automation/

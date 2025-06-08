@@ -1,5 +1,6 @@
-# Updated Requirements for Natural Language AI Sales ChatBot
-# Compatible with latest sales_chatbot.py
+# Natural Language AI Sales ChatBot - Dependencies
+# Compatible with RTX 4070Ti Super 16GB and RTX 4090 24GB
+# Updated for latest natural_language_chatbot.py with YAML configuration
 
 # Core AI/ML Dependencies - REQUIRED
 torch>=2.0.0
@@ -18,37 +19,32 @@ numpy>=1.24.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
 
-# GUI Framework (built into Python)
-# tkinter - No installation needed
+# Configuration Management - REQUIRED FOR YAML CONFIG
+PyYAML>=6.0.1
 
 # Document Processing
 PyPDF2>=3.0.1
 python-docx>=0.8.11
 openpyxl>=3.1.2
-python-pptx>=0.6.23
 
 # Image Processing and OCR
 Pillow>=10.0.0
 opencv-python>=4.8.0
 easyocr>=1.7.0
 
-# Web Search and Scraping - REQUIRED FOR LATEST CODE
+# Web Search and Scraping - REQUIRED
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 googlesearch-python>=1.2.3
 lxml>=4.9.3
 
-# Database (built into Python)
-# sqlite3 - No installation needed
-
-# Configuration and Utilities
-PyYAML>=6.0.1
-tqdm>=4.66.0
-
-# System Monitoring - REQUIRED FOR GPU OPTIMIZATION
+# System Monitoring - GPU OPTIMIZATION
 psutil>=5.9.0
 GPUtil>=1.4.0
 nvidia-ml-py3>=7.352.0
+
+# Utilities
+tqdm>=4.66.0
 
 # Development Tools (Optional)
 pytest>=7.4.0
@@ -56,23 +52,30 @@ black>=23.0.0
 flake8>=6.0.0
 
 # Optional: Enhanced Features
-gradio>=4.0.0           # For web interface
+gradio>=4.0.0           # For future web interface
 matplotlib>=3.7.0       # For analytics plots
 seaborn>=0.12.0         # For advanced analytics
 
-# Installation Notes:
-# 1. Install CUDA 11.8+ or 12.1+ first
+# Built-in Python modules (no installation needed):
+# - tkinter (GUI framework)
+# - sqlite3 (database)
+# - threading (concurrent processing)
+# - json (data handling)
+# - datetime (timestamps)
+# - logging (application logs)
+
+# Installation Instructions:
+# 1. Install CUDA 11.8+ or 12.1+ first from NVIDIA
 # 2. Install PyTorch with CUDA support:
 #    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-# 3. Then install other requirements:
+# 3. Install other requirements:
 #    pip install -r requirements.txt
 
-# Minimum Hardware:
-# - 16GB VRAM (RTX 4070Ti Super or better)
-# - 32GB RAM
-# - NVIDIA GPU with CUDA support
+# Hardware Requirements:
+# Minimum: RTX 4070Ti Super 16GB, 32GB RAM
+# Optimal: RTX 4090 24GB + RTX 4070Ti Super 16GB, 32GB+ RAM
 
-# Optimal Hardware:
-# - RTX 4090 24GB + RTX 4070Ti Super 16GB
-# - 32GB+ RAM
-# - NVMe SSD for model storage
+# Model Storage Requirements:
+# - Llama 3.2 3B: ~6GB storage, ~7GB VRAM (8-bit)
+# - Sentence Transformers: ~500MB storage, ~1GB VRAM
+# - Total: ~20GB storage for full setup with cache

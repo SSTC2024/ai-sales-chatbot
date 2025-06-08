@@ -1,0 +1,140 @@
+# Natural Language AI Sales ChatBot Configuration
+# Compatible with RTX 4070Ti Super 16GB and multi-GPU setups
+# Updated for latest natural_language_chatbot.py
+
+version: "1.0"
+environment: "production"
+
+# AI Model Configuration
+ai_models:
+  primary_llm: "meta-llama/Llama-3.2-3B-Instruct"    # Main text generation model
+  fallback_llm: "microsoft/DialoGPT-medium"          # Backup model if primary fails
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"  # Semantic search
+  intent_classifier: "facebook/bart-large-mnli"       # Intent detection (future use)
+
+# GPU Configuration
+gpu_config:
+  primary_device: "cuda:0"        # Primary GPU for LLM
+  use_quantization: true          # Enable 8-bit quantization for memory efficiency
+  mixed_precision: true           # Use mixed precision for speed
+  max_memory_per_gpu: 0.85        # Use 85% of available VRAM
+  batch_size: 4                   # Batch size for generation
+
+# Conversation Flow Configuration
+conversation_flows:
+  greeting:
+    triggers: ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"]
+    response_template: "Hello! I'm your AI sales assistant. I can help you find the perfect products for your needs. What are you looking for today?"
+    next_stage: "needs_assessment"
+    
+  needs_assessment:
+    triggers: ["looking for", "need", "want", "searching for", "interested in"]
+    response_template: "Let me help you find exactly what you need. Can you tell me more about your requirements?"
+    next_stage: "product_presentation"
+    
+  product_presentation:
+    search_threshold: 0.7
+    max_products_shown: 3
+    include_specifications: true
+    include_pricing: true
+    response_template: "Based on your requirements, I'd recommend these products:"
+    next_stage: "detailed_inquiry"
+
+# Intent Pattern Recognition
+intent_patterns:
+  price_inquiry:
+    patterns: ["price", "cost", "how much", "expensive", "cheap", "budget", "affordable"]
+    confidence_threshold: 0.8
+    response_type: "pricing_focus"
+    
+  feature_inquiry:
+    patterns: ["features", "specifications", "specs", "what can", "capabilities", "performance"]
+    confidence_threshold: 0.8
+    response_type: "feature_focus"
+    
+  availability_inquiry:
+    patterns: ["available", "in stock", "when", "delivery", "shipping", "buy", "purchase"]
+    confidence_threshold: 0.8
+    response_type: "availability_focus"
+    
+  comparison_request:
+    patterns: ["compare", "difference", "better", "which one", "versus", "vs", "between"]
+    confidence_threshold: 0.8
+    response_type: "comparison_focus"
+
+# Search Configuration
+search_config:
+  local_similarity_threshold: 0.7        # Minimum similarity for local database results
+  enable_google_search: true             # Enable fallback to Google search
+  google_search_fallback_threshold: 0.5  # Threshold to trigger Google search
+  max_google_results: 3                  # Number of Google results to consider
+  search_timeout: 10                     # Timeout for web searches (seconds)
+  enable_fuzzy_matching: true            # Enable fuzzy string matching
+
+# Performance Settings
+performance:
+  max_response_length: 512        # Maximum tokens in generated response
+  response_timeout: 30            # Maximum time for response generation (seconds)
+  context_window_size: 4096       # Context window for conversation memory
+  temperature: 0.7                # Randomness in text generation (0.0-1.0)
+  top_p: 0.9                     # Top-p sampling parameter
+  repetition_penalty: 1.1         # Penalty for repetitive text
+
+# Analytics Configuration
+analytics:
+  track_conversations: true              # Store conversations in database
+  track_product_mentions: true           # Track which products are discussed
+  track_conversion_funnel: true          # Track customer journey stages
+  track_response_times: true             # Monitor performance metrics
+  generate_daily_reports: true           # Generate analytics reports
+
+# Response Templates
+response_templates:
+  no_products_found:
+    message: "I couldn't find any products matching your exact criteria. Let me search for similar options or check if we have something comparable coming soon."
+    fallback_action: "google_search"
+    
+  out_of_stock:
+    message: "Unfortunately, {product_name} is currently out of stock. However, I can suggest similar alternatives or check when it'll be back in stock."
+    
+  price_inquiry:
+    message: "The {product_name} is priced at ${price}. This includes {included_features}. Would you like to know about any current promotions or payment options?"
+    
+  technical_support:
+    message: "I'd be happy to help with technical questions about {product_name}. What specific information do you need?"
+    
+  comparison_request:
+    message: "I'll compare these products for you based on {comparison_criteria}. Here are the key differences:"
+    
+  bundle_offer:
+    message: "Great choice! Customers often pair the {main_product} with {accessory_products} for a complete setup. I can offer you a bundle discount."
+
+# Database Configuration
+database_config:
+  auto_backup: true               # Automatically backup database
+  backup_interval: 24             # Backup interval in hours
+  max_conversation_history: 1000  # Maximum conversations to keep
+  enable_indexing: true           # Enable database indexing for faster search
+
+# Monitoring Configuration
+monitoring:
+  enable_performance_tracking: true      # Track system performance
+  log_response_times: true              # Log response time metrics
+  gpu_monitoring: true                  # Monitor GPU usage and temperature
+  memory_monitoring: true               # Monitor system memory usage
+  log_level: "INFO"                     # Logging level (DEBUG, INFO, WARNING, ERROR)
+
+# Advanced Features (Future)
+advanced_features:
+  enable_voice_input: false             # Voice input capability (future)
+  enable_voice_output: false            # Voice output capability (future)
+  enable_web_interface: false           # Web-based interface (future)
+  enable_api_server: false              # REST API server (future)
+  enable_multi_language: false          # Multi-language support (future)
+
+# Security Settings
+security:
+  enable_input_validation: true         # Validate user inputs
+  rate_limiting: false                  # Rate limiting for API (future)
+  max_request_size: 1024                # Maximum input size in characters
+  sanitize_outputs: true               # Sanitize generated responses

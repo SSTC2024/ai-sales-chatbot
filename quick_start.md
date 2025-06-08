@@ -2,116 +2,185 @@
 
 ## Overview
 
-This AI ChatBot uses **natural language generation** with local LLM models to provide human-like responses. It searches your local product database first, then falls back to Google search if needed.
+This AI ChatBot uses **natural language generation** with local LLM models and **YAML configuration** to provide human-like responses. It searches your local product database first, then falls back to Google search if needed.
 
 ## Key Features
 
-✅ **Natural Language Generation** - Uses local LLM (Llama 2, Mistral, etc.)  
+✅ **YAML Configuration** - Easy model and parameter management  
+✅ **Natural Language Generation** - Uses local LLM (Llama 3.2, etc.)  
 ✅ **Local Database Priority** - Searches your products first  
 ✅ **Google Search Fallback** - Finds info online when local data is insufficient  
 ✅ **Conversation Context** - Remembers previous conversation turns  
-✅ **Multi-GPU Support** - RTX 4090 + RTX 4070Ti Super optimization  
-✅ **Document Processing** - Excel, PDF, Word file support  
+✅ **Multi-GPU Support** - RTX 4070Ti Super + RTX 4090 optimization  
+✅ **Real-time Config Reload** - Change settings without restart  
 
 ## Hardware Requirements
 
-### Current Setup (Single GPU)
-- **RTX 4070Ti Super 16GB** or better
+### Minimum Setup
+- **RTX 4070Ti Super 16GB** or RTX 4080 16GB
 - **32GB RAM** minimum
-- **Windows 10/11**
+- **Windows 10/11** with CUDA 11.8+
 
-### Optimal Setup (Multi-GPU)
+### Optimal Setup
 - **RTX 4090 24GB** (Primary - for LLM)
 - **RTX 4070Ti Super 16GB** (Secondary - for embeddings)
 - **32GB+ RAM**
 
 ## Installation
 
-### 1. Install Python 3.9+
+### 1. Automated Setup (Recommended)
 ```bash
-# Download from python.org
+# Download the repository
+git clone https://github.com/yourusername/ai-sales-chatbot.git
+cd ai-sales-chatbot
+
+# Run automated setup (Windows)
+setup.bat
+```
+
+### 2. Manual Installation
+```bash
+# Install Python 3.9+
 python --version  # Should show 3.9+
-```
-
-### 2. Install CUDA Toolkit
-```bash
-# For NVIDIA GPUs - install CUDA 11.8 or 12.1
-# Download from: https://developer.nvidia.com/cuda-toolkit
-nvidia-smi  # Verify installation
-```
-
-### 3. Install Dependencies
-```bash
-# Create virtual environment (recommended)
-python -m venv chatbot_env
-chatbot_env\Scripts\activate  # Windows
-# source chatbot_env/bin/activate  # Linux/Mac
 
 # Install PyTorch with CUDA support
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-# Install other requirements
-pip install transformers>=4.35.0
-pip install sentence-transformers>=2.2.2
-pip install bitsandbytes>=0.41.0
-pip install accelerate>=0.24.0
-pip install pandas numpy scikit-learn
-pip install PyPDF2 python-docx openpyxl
-pip install easyocr opencv-python
-pip install requests beautifulsoup4 googlesearch-python
-pip install PyYAML psutil GPUtil nvidia-ml-py3
+# Install dependencies
+pip install -r requirements.txt
+
+# Verify YAML support
+python -c "import yaml; print('Configuration support enabled')"
 ```
 
-### 4. Run the ChatBot
+### 3. Launch Application
 ```bash
+# Option 1: Use batch file (Windows)
+start_chatbot.bat
+
+# Option 2: Direct Python execution
 python natural_language_chatbot.py
 ```
 
 ## First Time Setup
 
-### 1. Add Sample Data
-1. Click the **"Database"** tab
+### 1. Verify Configuration Loading
+When you start the application, you should see:
+```
+✅ Configuration loaded from chatbot_config.yaml
+Primary LLM: meta-llama/Llama-3.2-3B-Instruct
+Fallback LLM: microsoft/DialoGPT-medium
+Embedding Model: sentence-transformers/all-MiniLM-L6-v2
+Quantization: True
+```
+
+### 2. Add Sample Data
+1. Go to the **"Database"** tab
 2. Click **"Add Sample Products"** to add test data
 3. Click **"View Products"** to verify data was added
+4. Click **"Search Test"** to verify semantic search works
 
-### 2. Test Search Functionality
-1. Click **"Search Test"** to verify semantic search works
-2. Check that products are found with similarity scores
+### 3. Test Configuration Management
+1. Go to the **"Configuration"** tab
+2. Click **"View Config"** to see current settings
+3. Click **"Test Models"** to verify all models are working
+4. Click **"Reload Config"** to test configuration reloading
 
-### 3. Start Chatting
-1. Go to the **"Chat"** tab
-2. Try these example queries:
+### 4. Start Chatting
+Go to the **"Chat"** tab and try these example queries:
 
 ```
+"Hello!" (should trigger greeting template)
 "I'm looking for a gaming laptop under $2000"
 "What business computers do you recommend?"
 "Tell me about wireless gaming accessories"
 "Compare your laptop models for me"
-"I need a computer for video editing"
+"I need help with technical specifications"
+```
+
+## Configuration Management
+
+### Main Configuration File (`chatbot_config.yaml`)
+
+The system uses YAML configuration for easy customization:
+
+```yaml
+# AI Model Selection
+ai_models:
+  primary_llm: "meta-llama/Llama-3.2-3B-Instruct"
+  fallback_llm: "microsoft/DialoGPT-medium"
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+# GPU Settings
+gpu_config:
+  use_quantization: true    # 8-bit for memory efficiency
+  max_memory_per_gpu: 0.85  # Use 85% of VRAM
+
+# Response Parameters
+performance:
+  temperature: 0.7          # Response creativity (0.0-1.0)
+  max_response_length: 512  # Maximum response tokens
+  repetition_penalty: 1.1   # Reduce repetition
+
+# Search Settings
+search_config:
+  local_similarity_threshold: 0.7  # Database search sensitivity
+  enable_google_search: true       # Web search fallback
+  max_google_results: 3            # Number of web results
+```
+
+### Real-time Configuration Changes
+
+1. **Edit Configuration**: Modify `chatbot_config.yaml`
+2. **Reload in App**: Configuration tab → "Reload Config"
+3. **No Restart Required**: Changes apply immediately (except model changes)
+
+### Response Templates
+
+Configure automatic responses:
+```yaml
+response_templates:
+  greeting: "Hello! I'm your AI sales assistant..."
+  no_products_found: "I couldn't find matching products, but..."
+  out_of_stock: "This item is currently unavailable..."
 ```
 
 ## Expected Behavior
 
 ### Response Flow Priority
-1. **Local Database Search** - Searches your products using AI embeddings
-2. **Google Search** - If no local results, searches web for information
-3. **Natural Language Generation** - LLM creates human-like response
+1. **Configuration Check** - Loads settings from YAML
+2. **Greeting Detection** - Checks for greeting patterns from config
+3. **Local Database Search** - Searches products using configurable threshold
+4. **Google Search** - If enabled and no local results found
+5. **Natural Language Generation** - LLM creates response using config parameters
 
-### Example Interaction
+### Example Interaction with Configuration
 ```
-User: "I need a gaming laptop for under $2000"
+User: "Hello!"
 
 AI Process:
-1. ✅ Searches local database → finds "Gaming Laptop Pro X1"
-2. 🤖 Generates natural response using LLM
-3. 📊 Source: local_database | Time: 2.3s
+1. ✅ Detected greeting trigger from config
+2. 🤖 Used greeting template from config
+3. 📊 Source: template_response | Time: 0.1s
 
-AI Response: "I'd recommend our Gaming Laptop Pro X1, which is perfect for 
-your budget at $1,899.99. It features an RTX 4070 graphics card and Intel 
-i7-12700H processor with 32GB of DDR5 RAM, making it excellent for gaming. 
-The 15.6-inch 144Hz display ensures smooth gameplay, and it's currently in 
-stock. Would you like to know more about its specific gaming performance 
-or see some alternatives?"
+AI Response: "Hello! I'm your AI sales assistant. I can help you 
+find the perfect products for your needs. What are you looking for today?"
+
+---
+
+User: "I need a gaming laptop under $2000"
+
+AI Process:
+1. ✅ Searches local database (threshold: 0.7 from config)
+2. ✅ Found "Gaming Laptop Pro X1" with 89% similarity
+3. 🤖 Generated response using Llama 3.2 (temp: 0.7 from config)
+4. 📊 Source: local_database | Time: 2.3s
+
+AI Response: "Based on your budget, I'd recommend our Gaming Laptop Pro X1 
+at $1,899.99. It features an RTX 4070 graphics card and Intel i7-12700H 
+processor with 32GB DDR5 RAM. The 15.6-inch 144Hz display ensures smooth 
+gaming performance. It's currently in stock. Would you like to know more 
+about its gaming capabilities or see some alternatives?"
 ```
 
 ## Training the System
@@ -119,7 +188,7 @@ or see some alternatives?"
 ### Adding Your Product Data
 
 #### Excel/CSV Format
-Create files with these columns:
+Create files with these columns (configurable in training tab):
 - `name` - Product name
 - `description` - Product description  
 - `category` - Product category
@@ -141,122 +210,118 @@ Create files with these columns:
 
 ## Performance Optimization
 
-### GPU Memory Usage
-```yaml
-RTX 4090 24GB (Primary):
-  - Llama 2 7B (8-bit): ~7GB
-  - Llama 2 13B (8-bit): ~13GB
-  - Available for context: ~10-17GB
+### Automatic GPU Configuration
+The system automatically detects and optimizes for your hardware:
 
-RTX 4070Ti Super 16GB (Secondary):
-  - Sentence embeddings: ~0.1GB
-  - Product database: ~2-4GB
-  - OCR processing: ~1GB
-  - Available for batching: ~10GB
+```yaml
+RTX 4070Ti Super 16GB:
+  - Llama 3.2 3B (8-bit quantized): ~7GB VRAM
+  - Sentence embeddings: ~1GB VRAM
+  - Available for context: ~8GB VRAM
+
+RTX 4090 24GB:
+  - Llama 3.2 3B (full precision): ~6GB VRAM
+  - Sentence embeddings: ~1GB VRAM
+  - Available for larger models: ~17GB VRAM
 ```
 
-### Model Selection
-The system automatically chooses the best model for your GPU:
+### Configuration Tuning
+Adjust these settings in `chatbot_config.yaml` for better performance:
 
-- **24GB+ VRAM**: Llama 2 7B (full precision)
-- **16GB VRAM**: Llama 2 7B (8-bit quantized)
-- **12GB VRAM**: Llama 2 7B (heavily quantized)
-- **8GB VRAM**: DialoGPT-medium (fallback)
+```yaml
+# For faster responses (less quality)
+performance:
+  temperature: 0.3          # More focused responses
+  max_response_length: 256  # Shorter responses
+
+# For better quality (slower)
+performance:
+  temperature: 0.8          # More creative responses
+  max_response_length: 1024 # Longer responses
+
+# For memory optimization
+gpu_config:
+  use_quantization: true    # Enable 8-bit
+  max_memory_per_gpu: 0.8   # Reduce VRAM usage
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### 1. CUDA Out of Memory
-```python
-# Reduce model size in code
-use_quantization = True  # Enable 8-bit quantization
-batch_size = 8          # Reduce batch size
+#### 1. Configuration Not Loading
+```
+⚠️ chatbot_config.yaml not found, using default settings
+```
+**Solution**: Ensure `chatbot_config.yaml` is in the same directory as the Python script.
+
+#### 2. Model Loading Errors
+```
+❌ Error loading model from config: ...
+```
+**Solution**: Check model names in config file, verify internet connection for model downloads.
+
+#### 3. YAML Syntax Errors
+```
+❌ Error loading config: scanner.ScannerError...
+```
+**Solution**: Validate YAML syntax, check indentation (use spaces, not tabs).
+
+#### 4. GPU Memory Issues
+```
+CUDA out of memory...
+```
+**Solution**: Enable quantization in config:
+```yaml
+gpu_config:
+  use_quantization: true
+  max_memory_per_gpu: 0.8
 ```
 
-#### 2. Slow Response Times
-- Check GPU utilization with `nvidia-smi`
-- Ensure models are loaded on GPU, not CPU
-- Reduce conversation context length
+### Configuration Validation
 
-#### 3. Poor Search Results
-- Add more product data to database
-- Check that embeddings are being generated
-- Verify product descriptions are detailed
+Use the **Configuration tab** to:
+- **View Config**: Check current settings
+- **Test Models**: Verify all models load correctly
+- **Reload Config**: Apply changes without restart
 
-#### 4. Google Search Not Working
-- Check internet connection
-- Verify `googlesearch-python` is installed
-- May hit rate limits with frequent searches
-
-### Monitoring Performance
-
-#### Check System Status
-```python
-# In the Analytics tab, you can monitor:
-- Response times by data source
-- Local vs web search usage
-- GPU memory utilization
-- Conversation patterns
-```
-
-#### Log Files
-- Check `chatbot.log` for detailed error information
+### Log Files
+- Check `logs/chatbot.log` for detailed error information
 - Monitor GPU usage with `nvidia-smi`
-- Use Task Manager to check RAM usage
+- Use Configuration tab for real-time diagnostics
 
 ## Advanced Configuration
 
-### Custom Response Prompts
-The system builds prompts like this:
-```python
-prompt = f"""You are a professional AI sales assistant.
-
-Previous conversation:
-Customer: {previous_input}
-Assistant: {previous_response}
-
-Relevant products from our catalog:
-- Gaming Laptop Pro X1: High-performance gaming laptop...
-
-Current customer question: {user_input}
-
-Assistant response:"""
+### Custom Models
+To use different models, edit the config:
+```yaml
+ai_models:
+  primary_llm: "mistralai/Mistral-7B-Instruct-v0.1"
+  embedding_model: "BAAI/bge-large-en-v1.5"
 ```
 
-### Adding Custom Models
-To use different LLM models, modify the model selection:
-```python
-# In load_language_model() function
-model_options = [
-    "meta-llama/Llama-2-7b-chat-hf",      # 7B model
-    "meta-llama/Llama-2-13b-chat-hf",     # 13B model  
-    "mistralai/Mistral-7B-Instruct-v0.1", # Mistral
-    "microsoft/DialoGPT-large"             # Fallback
-]
+### Custom Response Flows
+```yaml
+conversation_flows:
+  technical_support:
+    triggers: ["help", "support", "problem"]
+    response_template: "I'm here to help with technical support..."
+    next_stage: "support_resolution"
 ```
 
-## Business Integration
-
-### CRM Integration
-The conversation data can be exported and integrated with:
-- Salesforce
-- HubSpot  
-- Microsoft Dynamics
-- Custom CRM systems
-
-### Analytics Export
-- Export conversation data to CSV
-- Analyze customer inquiry patterns
-- Track response accuracy
-- Monitor system performance
+### Performance Monitoring
+The system tracks (configurable in analytics section):
+- Response times by data source
+- Configuration parameter effectiveness
+- Model performance metrics
+- GPU utilization and optimization
 
 ## Next Steps
 
-1. **Test thoroughly** with sample data
-2. **Upload your real product catalogs**
-3. **Train the system** with your documentation
-4. **Monitor performance** and adjust settings
-5. **Scale to multi-GPU** setup when ready
+1. **Test thoroughly** with the sample data and configuration
+2. **Upload your real product catalogs** via Training tab
+3. **Customize configuration** in `chatbot_config.yaml`
+4. **Monitor performance** via Analytics and Configuration tabs
+5. **Fine-tune parameters** based on your specific use case
 
-For technical support, check the log files and error messages. The system provides detailed logging to help diagnose issues.
+For advanced configuration options, see the [Configuration Guide](CONFIGURATION.md).
