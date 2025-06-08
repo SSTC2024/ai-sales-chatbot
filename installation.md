@@ -1,362 +1,379 @@
-# Installation Guide - Natural Language AI Sales ChatBot
-
-## 🎯 **Compatible with Latest sales_chatbot.py**
-
-This guide is specifically updated for the latest `NaturalLanguageSalesChatBot` class with all new features.
+# 📖 Installation Guide - Natural Language AI Sales ChatBot
 
 ## System Requirements
 
-### **Minimum Hardware**
-- **GPU**: RTX 4070Ti Super 16GB or equivalent
-- **RAM**: 32GB DDR4/DDR5  
-- **Storage**: 50GB free space
+### Hardware Requirements
+
+#### Minimum Configuration
+- **GPU**: NVIDIA RTX 4070Ti Super 16GB or RTX 4080 16GB
+- **CPU**: Intel i7-10700K or AMD Ryzen 7 3700X (8+ cores recommended)
+- **RAM**: 32GB DDR4/DDR5
+- **Storage**: 50GB free space (SSD recommended for model caching)
 - **OS**: Windows 10/11 (64-bit)
 
-### **Optimal Hardware (Recommended)**
-- **Primary GPU**: RTX 4090 24GB (for LLM)
-- **Secondary GPU**: RTX 4070Ti Super 16GB (for embeddings)
-- **RAM**: 32GB+ DDR5
-- **Storage**: NVMe SSD for model caching
+#### Recommended Configuration
+- **Primary GPU**: NVIDIA RTX 4090 24GB (for LLM processing)
+- **Secondary GPU**: NVIDIA RTX 4070Ti Super 16GB (for embeddings)
+- **CPU**: Intel i9-12900K or AMD Ryzen 9 5900X
+- **RAM**: 64GB DDR5
+- **Storage**: 1TB NVMe SSD
+- **OS**: Windows 11 (64-bit)
 
-### **Software Requirements**
-- **Python**: 3.9, 3.10, or 3.11 (3.12 not fully supported yet)
-- **CUDA**: 11.8+ or 12.1+ for optimal GPU performance
-- **NVIDIA Drivers**: Latest stable version
+#### Future-Proof Configuration
+- **Multi-GPU**: 2-4x RTX 5070Ti/5080 16GB (when available)
+- **CPU**: Latest Intel i9 or AMD Ryzen 9
+- **RAM**: 128GB DDR5
+- **Storage**: 2TB NVMe SSD
 
-## Quick Installation
+### Software Requirements
+- **Python**: 3.9, 3.10, or 3.11 (3.12+ not yet fully supported by all dependencies)
+- **CUDA**: 11.8 or 12.1+ (for GPU acceleration)
+- **Visual Studio Build Tools**: For compiling certain packages
+- **Git**: For repository management (optional)
 
-### **Option 1: Automated Setup (Recommended)**
-1. Download `setup.bat` from the project
-2. Run as Administrator: Right-click → "Run as administrator"
-3. Follow the prompts
-4. Wait 10-15 minutes for package installation
+## Installation Methods
 
-### **Option 2: Manual Installation**
+### Method 1: Automated Setup (Recommended for Windows)
 
-#### **Step 1: Install Python**
+#### Step 1: Download Repository
 ```bash
-# Download Python 3.10 from python.org
-# ⚠️ IMPORTANT: Check "Add Python to PATH" during installation
-python --version  # Should show 3.10.x
-pip --version     # Verify pip is available
+# Using Git (recommended)
+git clone https://github.com/yourusername/ai-sales-chatbot.git
+cd ai-sales-chatbot
+
+# Or download ZIP and extract
 ```
 
-#### **Step 2: Install CUDA Toolkit (for GPU acceleration)**
+#### Step 2: Run Automated Setup
 ```bash
-# Download from: https://developer.nvidia.com/cuda-toolkit
-# Install CUDA 11.8 or 12.1
-# Verify installation:
+# Run as Administrator for best results
+setup.bat
+```
+
+The setup script will:
+- ✅ Verify Python and pip installation
+- ✅ Detect NVIDIA GPU and CUDA support
+- ✅ Create project directory structure
+- ✅ Install PyTorch with CUDA support
+- ✅ Install all required dependencies
+- ✅ Test package imports
+- ✅ Create configuration files
+- ✅ Generate startup scripts
+
+### Method 2: Manual Installation
+
+#### Step 1: Install Python
+1. Download Python 3.9+ from [python.org](https://python.org)
+2. **Important**: Check "Add Python to PATH" during installation
+3. Verify installation:
+```bash
+python --version
+pip --version
+```
+
+#### Step 2: Install CUDA Toolkit
+1. Download CUDA 11.8 or 12.1 from [NVIDIA Developer](https://developer.nvidia.com/cuda-toolkit)
+2. Follow NVIDIA installation instructions
+3. Verify installation:
+```bash
 nvidia-smi
 nvcc --version
 ```
 
-#### **Step 3: Create Project Directory**
+#### Step 3: Install PyTorch
 ```bash
-mkdir ai-sales-chatbot
-cd ai-sales-chatbot
-
-# Create subdirectories
-mkdir config data logs models backups
-mkdir data\excel data\pdf data\word data\images
-```
-
-#### **Step 4: Install Python Packages**
-```bash
-# Create virtual environment (recommended)
-python -m venv chatbot_env
-chatbot_env\Scripts\activate
-
-# Upgrade pip
-python -m pip install --upgrade pip
-
-# Install PyTorch with CUDA support
+# For CUDA 11.8
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-# Install AI/ML packages
+# For CUDA 12.1
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# For CPU-only (not recommended)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+
+#### Step 4: Install Dependencies
+```bash
+# Install all requirements
+pip install -r requirements.txt
+
+# Or install manually:
 pip install transformers>=4.35.0
 pip install sentence-transformers>=2.2.2
 pip install accelerate>=0.24.0
 pip install bitsandbytes>=0.41.0
-
-# Install document processing
+pip install PyYAML>=6.0.1
+pip install pandas numpy scikit-learn
 pip install PyPDF2 python-docx openpyxl
 pip install easyocr opencv-python Pillow
-
-# Install web search capabilities
-pip install googlesearch-python requests beautifulsoup4
-
-# Install system monitoring
+pip install requests beautifulsoup4 googlesearch-python
 pip install psutil GPUtil nvidia-ml-py3
-
-# Install utilities
-pip install PyYAML tqdm numpy pandas scikit-learn
 ```
 
-## Configuration
-
-### **Default Configuration File**
-The system will auto-create `config/chatbot_config.yaml`:
-
+#### Step 5: Create Configuration
+Create `chatbot_config.yaml` in the project directory:
 ```yaml
-# AI Model Configuration
+version: "1.0"
+environment: "production"
+
 ai_models:
-  primary_llm: "meta-llama/Llama-2-7b-chat-hf"
+  primary_llm: "meta-llama/Llama-3.2-3B-Instruct"
   fallback_llm: "microsoft/DialoGPT-medium"
   embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
 
-# GPU Configuration  
 gpu_config:
-  enable_multi_gpu: true
   use_quantization: true
-  mixed_precision: true
-  max_memory_per_gpu: 0.8
+  max_memory_per_gpu: 0.85
 
-# Search Configuration
 search_config:
   local_similarity_threshold: 0.7
   enable_google_search: true
-  max_google_results: 3
 
-# Response Generation
-response_config:
-  max_response_length: 512
+performance:
   temperature: 0.7
-  repetition_penalty: 1.1
+  max_response_length: 512
 ```
 
-### **GPU Memory Allocation**
-For RTX 4090 + RTX 4070Ti Super setup:
+### Method 3: Docker Installation (Advanced)
 
-```yaml
-gpu_allocation:
-  cuda:0:  # RTX 4090 24GB
-    - primary_llm: "Llama-2-7b-chat-hf"
-    - text_generation_pipeline
-    - conversation_context_management
-    
-  cuda:1:  # RTX 4070Ti Super 16GB  
-    - embedding_model: "all-MiniLM-L6-v2"
-    - product_search_index
-    - intent_classification
-    - ocr_processing
-```
+#### Prerequisites
+- Docker Desktop with WSL2
+- NVIDIA Container Toolkit
 
-## First Run
-
-### **1. Launch the Application**
+#### Build and Run
 ```bash
-# Option A: Use startup script
-start_chatbot.bat
+# Clone repository
+git clone https://github.com/yourusername/ai-sales-chatbot.git
+cd ai-sales-chatbot
 
-# Option B: Direct Python execution
-python sales_chatbot.py
+# Build Docker image
+docker build -t ai-sales-chatbot .
+
+# Run with GPU support
+docker run --gpus all -p 8000:8000 ai-sales-chatbot
 ```
 
-### **2. Initial Model Download**
-- **First run takes 10-15 minutes** (downloads AI models)
-- **Llama 2 7B**: ~13GB download
-- **Sentence Transformers**: ~90MB download
-- **EasyOCR models**: ~500MB download
+## Verification and Testing
 
-### **3. Verify Installation**
-Check the chat window for these messages:
+### Step 1: Import Testing
+```bash
+# Test core imports
+python -c "import torch; print('PyTorch:', torch.__version__, 'CUDA:', torch.cuda.is_available())"
+python -c "import transformers; print('Transformers:', transformers.__version__)"
+python -c "import sentence_transformers; print('Sentence Transformers: OK')"
+python -c "import yaml; print('PyYAML: Configuration support enabled')"
 ```
+
+### Step 2: GPU Testing
+```bash
+# Check GPU detection
+python -c "
+import torch
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU count: {torch.cuda.device_count()}')
+    for i in range(torch.cuda.device_count()):
+        props = torch.cuda.get_device_properties(i)
+        print(f'GPU {i}: {props.name} - {props.total_memory/1024**3:.1f}GB')
+"
+```
+
+### Step 3: Model Loading Test
+```bash
+# Test model loading (this will download models)
+python -c "
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained('microsoft/DialoGPT-medium')
+print('Model loading test: SUCCESS')
+"
+```
+
+### Step 4: Application Launch
+```bash
+# Launch the application
+python natural_language_chatbot.py
+```
+
+You should see:
+```
+✅ Configuration loaded from chatbot_config.yaml
+Primary LLM: meta-llama/Llama-3.2-3B-Instruct
+Found 1 GPU(s)
+GPU 0: NVIDIA GeForce RTX 4070 Ti SUPER - 16.0GB
 ✅ Language model loaded successfully
-✅ Embedding model loaded successfully  
-✅ OCR model loaded successfully
-🤖 Natural Language AI Sales ChatBot Initialized!
+✅ Embedding model loaded successfully
+✅ All AI models loaded successfully!
 ```
 
-## Testing the System
+## Configuration Setup
 
-### **1. Add Sample Data**
-1. Go to **"Database"** tab
-2. Click **"Add Sample Products"**
-3. Click **"View Products"** to verify
-4. Click **"Search Test"** to test semantic search
-
-### **2. Test Natural Language Generation**
-Try these queries in the **"Chat"** tab:
+### Directory Structure
+After installation, your project should look like:
 ```
-"I'm looking for a gaming laptop under $2000"
-"What business computers do you recommend?"
-"Tell me about wireless gaming accessories" 
-"Compare your laptop models for me"
-```
-
-### **3. Expected Response Flow**
-```
-User: "I need a gaming laptop for under $2000"
-
-AI Process:
-1. 🔍 Searches local database using embeddings
-2. ✅ Finds "Gaming Laptop Pro X1" (similarity: 0.89)
-3. 🤖 Generates natural language response using LLM
-4. 📊 Source: local_database | Time: 2.3s
-
-Response: "I'd recommend our Gaming Laptop Pro X1 at $1,899.99. 
-It features an RTX 4070 graphics card and Intel i7-12700H 
-processor with 32GB DDR5 RAM, making it excellent for gaming 
-within your budget..."
+ai-sales-chatbot/
+├── natural_language_chatbot.py      # Main application
+├── chatbot_config.yaml             # Configuration file
+├── requirements.txt                # Dependencies
+├── setup.bat                       # Setup script
+├── start_chatbot.bat              # Launch script
+├── README.md                       # Documentation
+├── data/                           # Training data
+│   ├── excel/                      # Product catalogs
+│   ├── pdf/                        # Documentation
+│   └── images/                     # Product images
+├── logs/                           # Application logs
+├── models/                         # AI model cache
+├── backups/                        # Database backups
+└── docs/                           # Documentation
+    ├── QUICK_START.md
+    ├── INSTALLATION.md
+    └── CONFIGURATION.md
 ```
 
-## Training the System
+### Configuration File Location
+The `chatbot_config.yaml` file must be in the **same directory** as `natural_language_chatbot.py`.
 
-### **1. Upload Product Data**
-**Excel/CSV Format** (required columns):
-- `name` - Product name
-- `description` - Product description  
-- `category` - Product category
-- `price` - Product price
-- `features` - Key features
-- `specifications` - Technical specifications
-- `availability` - Stock status
-
-**Upload Process**:
-1. Go to **"Training"** tab
-2. Click **"Upload Excel Files"**
-3. Select your product catalog
-4. Monitor processing status
-
-### **2. Document Processing**
-- **PDF Files**: Product manuals, brochures
-- **Word Files**: Product documentation  
-- **Images**: Product photos (OCR extracts text)
-
-## Performance Optimization
-
-### **GPU Memory Management**
-```python
-# Automatic optimization based on available VRAM
-RTX 4090 24GB:
-  - Llama 2 7B (8-bit): ~7GB
-  - Context buffer: ~5GB
-  - Available: ~12GB
-
-RTX 4070Ti Super 16GB:
-  - Embeddings: ~0.1GB
-  - Product database: ~2-4GB
-  - OCR models: ~1GB  
-  - Available: ~10GB
+**Correct Structure:**
+```
+your-project-folder/
+├── natural_language_chatbot.py
+├── chatbot_config.yaml          ← Same directory
+└── other files...
 ```
 
-### **Model Selection by Hardware**
-```python
-# Automatic model selection
-if gpu_memory >= 20:  # RTX 4090
-    model = "meta-llama/Llama-2-7b-chat-hf"
-    quantization = False
-elif gpu_memory >= 12:  # RTX 4070Ti Super
-    model = "meta-llama/Llama-2-7b-chat-hf" 
-    quantization = True
-else:  # Fallback
-    model = "microsoft/DialoGPT-medium"
-    quantization = True
-```
+### Model Download and Caching
+On first run, the system will download AI models:
+- **Llama 3.2 3B**: ~6GB download, ~7GB VRAM usage (8-bit)
+- **Sentence Transformers**: ~500MB download, ~1GB VRAM usage
+- **Total storage**: ~20GB with cache and temporary files
+
+Models are cached in:
+- **Windows**: `C:\Users\{username}\.cache\huggingface\`
+- **Custom location**: Set `HF_HOME` environment variable
 
 ## Troubleshooting
 
-### **Common Installation Issues**
+### Common Installation Issues
 
-#### **1. PyTorch CUDA Issues**
-```bash
-# Test CUDA availability
-python -c "import torch; print(torch.cuda.is_available())"
-
-# If False, reinstall PyTorch:
-pip uninstall torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#### Issue 1: Python Not Found
 ```
-
-#### **2. Out of Memory Errors**
-```python
-# In config/chatbot_config.yaml, reduce:
-gpu_config:
-  max_memory_per_gpu: 0.6  # Reduce from 0.8 to 0.6
-  use_quantization: true   # Enable if not already
-
-response_config:
-  max_response_length: 256  # Reduce from 512
+'python' is not recognized as an internal or external command
 ```
+**Solution:**
+1. Reinstall Python with "Add to PATH" checked
+2. Or manually add Python to PATH environment variable
 
-#### **3. Model Download Failures**
-```bash
-# Clear cache and retry
-rm -rf ~/.cache/huggingface/
-python sales_chatbot.py
+#### Issue 2: CUDA Not Available
 ```
-
-#### **4. Google Search Not Working**
-```bash
-# Install/reinstall googlesearch
-pip uninstall googlesearch-python
-pip install googlesearch-python==1.2.3
+CUDA not available. Using CPU mode.
 ```
+**Solutions:**
+1. Install NVIDIA drivers: [geforce.com/drivers](https://geforce.com/drivers)
+2. Install CUDA toolkit: [developer.nvidia.com/cuda-toolkit](https://developer.nvidia.com/cuda-toolkit)
+3. Verify with `nvidia-smi` command
 
-### **Performance Issues**
-
-#### **Slow Response Times**
-- Check GPU utilization: `nvidia-smi`
-- Verify models loaded on GPU, not CPU
-- Reduce conversation context length
-- Enable quantization for large models
-
-#### **Memory Leaks**
-- Restart application periodically
-- Monitor RAM usage in Task Manager
-- Clear conversation history regularly
-
-### **Log Analysis**
-Check `logs/chatbot.log` for detailed error information:
-```bash
-# View recent errors
-tail -50 logs/chatbot.log
-
-# Search for specific errors
-findstr "ERROR" logs/chatbot.log
+#### Issue 3: PyTorch Installation Fails
 ```
-
-## Advanced Configuration
-
-### **Custom Model Integration**
-```python
-# To use different LLM models, modify load_language_model():
-model_options = [
-    "meta-llama/Llama-2-13b-chat-hf",     # Larger model
-    "mistralai/Mistral-7B-Instruct-v0.1", # Alternative
-    "microsoft/DialoGPT-large",           # Fallback
-]
+ERROR: Could not find a version that satisfies the requirement torch
 ```
+**Solutions:**
+1. Update pip: `python -m pip install --upgrade pip`
+2. Use specific PyTorch index: `pip install torch --index-url https://download.pytorch.org/whl/cu118`
+3. Install Visual Studio Build Tools if on Windows
 
-### **Multi-GPU Scaling**
-For 4+ GPU setups:
+#### Issue 4: Memory Errors During Model Loading
+```
+OutOfMemoryError: CUDA out of memory
+```
+**Solutions:**
+1. Enable quantization in config:
 ```yaml
-gpu_allocation:
-  cuda:0: ["primary_llm"]
-  cuda:1: ["embedding_model", "product_search"]  
-  cuda:2: ["intent_classification", "ocr"]
-  cuda:3: ["backup_models", "batch_processing"]
+gpu_config:
+  use_quantization: true
+  max_memory_per_gpu: 0.8
+```
+2. Close other GPU applications
+3. Restart system to clear GPU memory
+
+#### Issue 5: Configuration File Not Found
+```
+⚠️ chatbot_config.yaml not found, using default settings
+```
+**Solutions:**
+1. Ensure `chatbot_config.yaml` is in the same directory as the Python script
+2. Check file name spelling and extension
+3. Run setup script to create default configuration
+
+#### Issue 6: Import Errors
+```
+ModuleNotFoundError: No module named 'transformers'
+```
+**Solutions:**
+1. Activate virtual environment if using one
+2. Reinstall requirements: `pip install -r requirements.txt`
+3. Check Python environment: `pip list | grep transformers`
+
+### Performance Issues
+
+#### Slow Model Loading
+- **Cause**: Models downloading from internet
+- **Solution**: Wait for initial download, subsequent loads will be faster
+
+#### Slow Response Times
+- **Cause**: Running on CPU instead of GPU
+- **Solution**: Verify CUDA installation and GPU detection
+
+#### High Memory Usage
+- **Cause**: Large models loaded in full precision
+- **Solution**: Enable quantization in configuration
+
+### Getting Help
+
+#### Log Files
+Check these locations for detailed error information:
+- `logs/chatbot.log` - Application logs
+- Console output during installation
+- Windows Event Viewer for system-level errors
+
+#### System Information
+Gather this information when reporting issues:
+```bash
+# Python environment
+python --version
+pip list
+
+# GPU information
+nvidia-smi
+
+# System information
+systeminfo  # Windows
 ```
 
-### **Production Deployment**
-- Enable automatic model caching
-- Set up database backups
-- Configure performance monitoring
-- Implement user authentication
-- Add API endpoints for integration
+#### Community Support
+- **GitHub Issues**: [Repository Issues Page]
+- **Documentation**: Check docs/ folder
+- **Configuration Help**: Use Configuration tab in application
 
-## Support
+## Advanced Installation Options
 
-### **Getting Help**
-1. Check the **Quick Start Guide** for common questions
-2. Review `logs/chatbot.log` for error details
-3. Use `check_requirements.bat` to verify installation
-4. Monitor GPU/RAM usage during operation
+### Virtual Environment Setup
+```bash
+# Create virtual environment
+python -m venv chatbot_env
 
-### **Known Limitations**
-- Google search has rate limits (10-15 queries/minute)
-- First model load takes 10-15 minutes
-- Large datasets require significant VRAM
-- OCR accuracy varies with image quality
+# Activate (Windows)
+chatbot_env\Scripts\activate
 
-This installation guide ensures compatibility with the latest `NaturalLanguageSalesChatBot` implementation with all advanced features enabled.
+# Activate (Linux/Mac)
+source chatbot_env/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Multiple Python Versions
+If you have multiple Python versions:
+```bash
+# Use specific Python version
+python3.9 -m pip install -r requirements.txt
+python
