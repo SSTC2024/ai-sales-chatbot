@@ -34,6 +34,7 @@ import docx
 from PyPDF2 import PdfReader
 from openpyxl import load_workbook
 import easyocr
+import socket
 
 # Language detection and translation
 try:
@@ -44,6 +45,11 @@ try:
 except ImportError:
     TRANSLATION_AVAILABLE = False
     print("⚠️ Translation libraries not available. Install with: pip install googletrans==4.0.0rc1 langdetect")
+    
+# Web interface imports
+from flask import Flask, render_template, request, jsonify
+import argparse
+import socket
 
 class VietnameseAISalesBot:
     """
@@ -2724,6 +2730,1075 @@ Try asking questions like:
         except:
             pass
 
+# COMPLETE ENHANCED WebChatInterface CLASS - WITH BEAUTIFUL FEMALE SALESPERSON
+
+class WebChatInterface:
+    """Web interface for the chatbot with personalized addressing and beautiful salesperson"""
+    
+    def __init__(self, chatbot_instance, host='0.0.0.0', port=5000):
+        self.chatbot = chatbot_instance
+        self.host = host
+        self.port = port
+        self.app = Flask(__name__)
+        # Store user sessions for personalized addressing
+        self.user_sessions = {}
+        self.setup_routes()
+    
+    def get_addressing_terms(self, gender, age):
+        """Get appropriate addressing terms based on gender and age"""
+        if age < 25:
+            return {
+                'customer_address': 'Bạn',  # Call customer "You"
+                'bot_address': 'tôi',       # Bot uses "I"
+                'customer_address_en': 'You',
+                'bot_address_en': 'I'
+            }
+        elif 25 <= age <= 45:
+            if gender.lower() == 'male':
+                return {
+                    'customer_address': 'Anh',  # Call customer "Anh"
+                    'bot_address': 'em',        # Bot uses "Em"
+                    'customer_address_en': 'Sir',
+                    'bot_address_en': 'I'
+                }
+            else:  # female
+                return {
+                    'customer_address': 'Chị',  # Call customer "Chi"
+                    'bot_address': 'em',        # Bot uses "Em"
+                    'customer_address_en': 'Madam',
+                    'bot_address_en': 'I'
+                }
+        else:  # 45+
+            if gender.lower() == 'male':
+                return {
+                    'customer_address': 'Chú',  # Call customer "Chu"
+                    'bot_address': 'con',       # Bot uses "Con"
+                    'customer_address_en': 'Uncle',
+                    'bot_address_en': 'I'
+                }
+            else:  # female
+                return {
+                    'customer_address': 'Cô',   # Call customer "Co"
+                    'bot_address': 'con',       # Bot uses "Con"
+                    'customer_address_en': 'Aunt',
+                    'bot_address_en': 'I'
+                }
+    
+    def setup_routes(self):
+        """Setup Flask routes"""
+        
+        @self.app.route('/')
+        def index():
+            """Main chat page with beautiful female salesperson"""
+            return '''
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Sales Assistant - Tech Store</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            overflow: hidden;
+        }
+        
+        .main-container {
+            display: flex;
+            width: 100%;
+            max-width: 1400px;
+            height: 90vh;
+            margin: 0 auto;
+            gap: 30px;
+            align-items: stretch;
+        }
+        
+        .chat-section {
+            flex: 1;
+            max-width: 750px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .salesperson-section {
+            width: 420px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            padding: 30px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .salesperson-image-container {
+            width: 320px;
+            height: 400px;
+            border-radius: 20px;
+            margin-bottom: 25px;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 3px solid #667eea;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(102, 126, 234, 0.3);
+        }
+        
+        .salesperson-image {
+            width: 100%;
+            height: 100%;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400"><defs><linearGradient id="skin" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:%23fef3e2"/><stop offset="100%" style="stop-color:%23fed7aa"/></linearGradient><linearGradient id="hair" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:%23374151"/><stop offset="100%" style="stop-color:%23111827"/></linearGradient><linearGradient id="suit" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:%232563eb"/><stop offset="100%" style="stop-color:%231d4ed8"/></linearGradient><linearGradient id="shirt" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:%23ffffff"/><stop offset="100%" style="stop-color:%23f8fafc"/></linearGradient></defs><rect width="320" height="400" fill="%23f1f5f9"/><ellipse cx="160" cy="100" rx="55" ry="65" fill="url(%23skin)"/><path d="M105,70 Q160,30 215,70 Q215,90 160,95 Q105,90 105,70" fill="url(%23hair)"/><circle cx="140" cy="85" r="4" fill="%23374151"/><circle cx="180" cy="85" r="4" fill="%23374151"/><ellipse cx="160" cy="95" rx="8" ry="4" fill="%23f59e0b"/><path d="M150,105 Q160,110 170,105" stroke="%23ef4444" stroke-width="3" fill="none"/><rect x="130" y="80" width="25" height="15" rx="12" fill="none" stroke="%23374151" stroke-width="2"/><rect x="165" y="80" width="25" height="15" rx="12" fill="none" stroke="%23374151" stroke-width="2"/><line x1="155" y1="87" x2="165" y2="87" stroke="%23374151" stroke-width="2"/><ellipse cx="160" cy="120" rx="45" ry="35" fill="url(%23skin)"/><rect x="120" y="160" width="80" height="100" rx="10" fill="url(%23shirt)"/><rect x="110" y="170" width="100" height="120" rx="15" fill="url(%23suit)"/><rect x="155" y="170" width="10" height="80" fill="%23dc2626"/><ellipse cx="160" cy="140" rx="25" ry="15" fill="url(%23skin)"/><ellipse cx="160" cy="155" rx="35" ry="20" fill="url(%23skin)"/><rect x="140" y="290" width="40" height="60" rx="8" fill="%23374151"/><rect x="135" y="350" width="50" height="50" rx="25" fill="%2392400e"/><ellipse cx="160" cy="180" rx="20" ry="25" fill="url(%23skin)"/><circle cx="160" cy="120" r="35" fill="none" stroke="%23fbbf24" stroke-width="1" opacity="0.3"/><text x="160" y="380" text-anchor="middle" font-family="Arial" font-size="14" fill="%23374151" font-weight="bold">AI Sales Assistant</text><circle cx="125" cy="75" r="15" fill="none" stroke="%23667eea" stroke-width="2" opacity="0.8"/><circle cx="195" cy="75" r="15" fill="none" stroke="%23667eea" stroke-width="2" opacity="0.8"/></svg>') center center;
+            background-size: cover;
+            position: relative;
+        }
+        
+        .salesperson-info {
+            text-align: center;
+            color: #1e293b;
+        }
+        
+        .salesperson-info h2 {
+            font-size: 26px;
+            margin-bottom: 15px;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .salesperson-info p {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #64748b;
+            margin-bottom: 15px;
+        }
+        
+        .salesperson-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .feature-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .chat-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 25px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            height: 100%;
+        }
+        
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            font-size: 22px;
+            font-weight: bold;
+            position: relative;
+        }
+        
+        .chat-header::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 10px solid #764ba2;
+        }
+        
+        .personal-info-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+            max-width: 450px;
+            width: 90%;
+            text-align: center;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+        
+        .modal-content h2 {
+            color: #667eea;
+            margin-bottom: 25px;
+            font-size: 28px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #374151;
+            font-size: 16px;
+        }
+        
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .form-group select:focus,
+        .form-group input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 35px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+        
+        .submit-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 25px;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            min-height: 400px;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message.bot {
+            justify-content: flex-start;
+        }
+        
+        .message-content {
+            max-width: 75%;
+            padding: 18px 25px;
+            border-radius: 20px;
+            word-wrap: break-word;
+            line-height: 1.5;
+            position: relative;
+            font-size: 16px;
+        }
+        
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 5px;
+            margin-left: 60px;
+        }
+        
+        .message.user .message-content::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: -10px;
+            width: 0;
+            height: 0;
+            border-left: 10px solid #764ba2;
+            border-top: 10px solid transparent;
+            border-bottom: 10px solid transparent;
+        }
+        
+        .message.bot .message-content {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 2px solid #e5e7eb;
+            color: #374151;
+            border-bottom-left-radius: 5px;
+            margin-right: 60px;
+        }
+        
+        .message.bot .message-content::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: -12px;
+            width: 0;
+            height: 0;
+            border-right: 10px solid #ffffff;
+            border-top: 10px solid transparent;
+            border-bottom: 10px solid transparent;
+        }
+        
+        .chat-input-container {
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.95);
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .language-selector {
+            padding: 12px 15px;
+            border: 2px solid #667eea;
+            border-radius: 25px;
+            background: white;
+            color: #667eea;
+            font-weight: bold;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s;
+        }
+        
+        .language-selector:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 15px 25px;
+            border: 2px solid #e5e7eb;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .chat-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .send-button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        .send-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .typing-indicator {
+            display: none;
+            padding: 18px 25px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 2px solid #e5e7eb;
+            border-radius: 20px;
+            border-bottom-left-radius: 5px;
+            max-width: 75%;
+            margin-bottom: 20px;
+            margin-right: 60px;
+        }
+        
+        .typing-dots {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .typing-dots span {
+            width: 10px;
+            height: 10px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+                opacity: 0.4;
+            }
+            30% {
+                transform: translateY(-15px);
+                opacity: 1;
+            }
+        }
+        
+        .status-info {
+            font-size: 14px;
+            color: #64748b;
+            margin-top: 10px;
+            text-align: center;
+            padding: 0 25px;
+        }
+        
+        .user-info-display {
+            background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%);
+            padding: 15px 25px;
+            margin: 0 25px 20px 25px;
+            border-radius: 15px;
+            font-size: 14px;
+            color: #1e40af;
+            text-align: center;
+            border: 1px solid #3b82f6;
+        }
+        
+        .error-message {
+            color: #dc2626;
+            background: #fef2f2;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border: 1px solid #fecaca;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-container {
+                flex-direction: column;
+                height: auto;
+                gap: 20px;
+            }
+            
+            .salesperson-section {
+                width: 100%;
+                order: -1;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+            
+            .chat-section {
+                max-width: none;
+            }
+            
+            .chat-container {
+                height: 70vh;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .salesperson-image-container {
+                width: 250px;
+                height: 300px;
+            }
+            
+            .message-content {
+                max-width: 85%;
+                font-size: 14px;
+                padding: 15px 20px;
+            }
+            
+            .chat-header {
+                font-size: 18px;
+                padding: 20px;
+            }
+            
+            .chat-input-container {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .language-selector {
+                order: 3;
+                flex: 1;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Personal Information Modal -->
+    <div class="personal-info-modal" id="personalInfoModal">
+        <div class="modal-content">
+            <h2>🤖 Xin chào! Chúc bạn một ngày tốt lành!</h2>
+            <p style="margin-bottom: 25px; color: #64748b; font-size: 16px;">
+                Vui lòng cung cấp một số thông tin cá nhân để tiện xưng hô nhé!<br>
+                <small>Hello! Wish you a good day. Please provide some personal information for convenience in addressing.</small>
+            </p>
+            
+            <div id="errorContainer"></div>
+            
+            <form id="personalInfoForm">
+                <div class="form-group">
+                    <label for="gender">Giới tính / Gender:</label>
+                    <select id="gender" required>
+                        <option value="">Chọn giới tính / Select gender</option>
+                        <option value="male">Nam / Male</option>
+                        <option value="female">Nữ / Female</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="age">Tuổi / Age:</label>
+                    <input type="number" id="age" min="15" max="100" required 
+                           placeholder="Nhập tuổi của bạn / Enter your age">
+                </div>
+                
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    Bắt đầu trò chuyện / Start Chat
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Chat Section (Left Side) -->
+        <div class="chat-section">
+            <div class="chat-container">
+                <div class="chat-header">
+                    💬 AI Sales Assistant / Trợ lý AI Bán hàng
+                </div>
+                
+                <div class="user-info-display" id="userInfoDisplay" style="display: none;">
+                    <span id="userInfoText"></span>
+                </div>
+                
+                <div class="chat-messages" id="chatMessages">
+                    <div class="typing-indicator" id="typingIndicator">
+                        <div class="typing-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chat-input-container">
+                    <select class="language-selector" id="languageSelect">
+                        <option value="vi">🇻🇳 Tiếng Việt</option>
+                        <option value="en">🇺🇸 English</option>
+                    </select>
+                    <input type="text" class="chat-input" id="messageInput" 
+                           placeholder="Nhập tin nhắn của bạn / Type your message..." 
+                           autocomplete="off" disabled>
+                    <button class="send-button" id="sendButton" onclick="sendMessage()" disabled>
+                        Gửi / Send
+                    </button>
+                </div>
+                
+                <div class="status-info" id="statusInfo">
+                    Vui lòng nhập thông tin cá nhân để bắt đầu / Please enter personal information to start
+                </div>
+            </div>
+        </div>
+
+        <!-- Beautiful Female Salesperson Section (Right Side) -->
+        <div class="salesperson-section">
+            <div class="salesperson-image-container">
+                <div class="salesperson-image"></div>
+            </div>
+            
+            <div class="salesperson-info">
+                <h2>👩‍💼 Trợ lý AI Bán hàng</h2>
+                <p><strong>Xin chào!</strong> Tôi là trợ lý AI xinh đẹp của cửa hàng. Với kiến thức chuyên sâu về công nghệ, tôi sẵn sàng giúp bạn tìm kiếm những sản phẩm phù hợp nhất.</p>
+                
+                <p><strong>Hello!</strong> I'm the beautiful AI assistant of the store. With deep knowledge of technology, I'm ready to help you find the most suitable products.</p>
+                
+                <div class="salesperson-features">
+                    <div class="feature-badge">Chuyên gia IT</div>
+                    <div class="feature-badge">Tư vấn 24/7</div>
+                    <div class="feature-badge">Đa ngôn ngữ</div>
+                    <div class="feature-badge">Thân thiện</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isProcessing = false;
+        let userInfo = null;
+        let addressingTerms = null;
+        
+        function showError(message) {
+            const errorContainer = document.getElementById('errorContainer');
+            errorContainer.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+        
+        function clearError() {
+            const errorContainer = document.getElementById('errorContainer');
+            errorContainer.innerHTML = '';
+        }
+        
+        // Handle personal information form submission
+        document.getElementById('personalInfoForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            clearError();
+            
+            console.log('Form submission started');
+            
+            const gender = document.getElementById('gender').value;
+            const age = parseInt(document.getElementById('age').value);
+            
+            console.log('Form values - Gender:', gender, 'Age:', age);
+            
+            if (!gender) {
+                showError('Vui lòng chọn giới tính / Please select gender');
+                return;
+            }
+            
+            if (!age || age < 15 || age > 100) {
+                showError('Vui lòng nhập tuổi hợp lệ (15-100) / Please enter valid age (15-100)');
+                return;
+            }
+            
+            userInfo = { gender, age };
+            console.log('UserInfo prepared:', userInfo);
+            
+            // Update submit button
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Đang xử lý... / Processing...';
+            
+            try {
+                console.log('Sending request to /set_user_info');
+                
+                const response = await fetch('/set_user_info', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(userInfo)
+                });
+                
+                console.log('Response received, status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'Server returned error');
+                }
+                
+                addressingTerms = data.addressing_terms;
+                console.log('Addressing terms received:', addressingTerms);
+                
+                // Hide modal and enable chat
+                document.getElementById('personalInfoModal').style.display = 'none';
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendButton').disabled = false;
+                
+                // Show user info
+                const userInfoDisplay = document.getElementById('userInfoDisplay');
+                const userInfoText = document.getElementById('userInfoText');
+                const language = document.getElementById('languageSelect').value;
+                
+                if (language === 'vi') {
+                    userInfoText.textContent = `Chế độ xưng hô: ${addressingTerms.customer_address} - ${addressingTerms.bot_address} | Tuổi: ${age} | Giới tính: ${gender === 'male' ? 'Nam' : 'Nữ'}`;
+                } else {
+                    userInfoText.textContent = `Addressing mode: ${addressingTerms.customer_address_en} - ${addressingTerms.bot_address_en} | Age: ${age} | Gender: ${gender}`;
+                }
+                userInfoDisplay.style.display = 'block';
+                
+                // Show welcome message
+                if (data.welcome_message) {
+                    addMessage(data.welcome_message, false, language);
+                }
+                
+                // Update status
+                updateStatus(language === 'vi' ? 'Sẵn sàng trò chuyện' : 'Ready to chat');
+                
+                // Focus on input
+                document.getElementById('messageInput').focus();
+                
+                console.log('Setup completed successfully');
+                
+            } catch (error) {
+                console.error('Error in form submission:', error);
+                showError(`Lỗi: ${error.message} / Error: ${error.message}`);
+                
+                // Re-enable submit button
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Bắt đầu trò chuyện / Start Chat';
+            }
+        });
+        
+        function addMessage(content, isUser = false, language = 'vi') {
+            const messagesContainer = document.getElementById('chatMessages');
+            const typingIndicator = document.getElementById('typingIndicator');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.innerHTML = content.replace(/\\n/g, '<br>');
+            
+            messageDiv.appendChild(messageContent);
+            messagesContainer.insertBefore(messageDiv, typingIndicator);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function showTyping() {
+            document.getElementById('typingIndicator').style.display = 'block';
+            const messagesContainer = document.getElementById('chatMessages');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function hideTyping() {
+            document.getElementById('typingIndicator').style.display = 'none';
+        }
+        
+        function updateStatus(message) {
+            document.getElementById('statusInfo').textContent = message;
+        }
+        
+        async function sendMessage() {
+            if (isProcessing || !userInfo) return;
+            
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            const languageSelect = document.getElementById('languageSelect');
+            
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            const language = languageSelect.value;
+            
+            // Disable input and show processing state
+            isProcessing = true;
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            updateStatus(language === 'vi' ? 'Đang xử lý...' : 'Processing...');
+            
+            // Add user message
+            addMessage(message, true, language);
+            messageInput.value = '';
+            
+            // Show typing indicator
+            showTyping();
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        language: language,
+                        user_info: userInfo
+                    })
+                });
+                
+                const data = await response.json();
+                
+                // Hide typing indicator
+                hideTyping();
+                
+                if (data.success) {
+                    addMessage(data.response, false, language);
+                    
+                    // Update status with processing info
+                    const processingTime = data.processing_time ? data.processing_time.toFixed(1) : '0.0';
+                    const dataSource = data.data_source || 'unknown';
+                    const statusMsg = language === 'vi' ? 
+                        `✅ Hoàn thành (${processingTime}s, ${dataSource})` :
+                        `✅ Complete (${processingTime}s, ${dataSource})`;
+                    updateStatus(statusMsg);
+                } else {
+                    const errorMsg = language === 'vi' ? 
+                        'Xin lỗi, tôi gặp lỗi khi xử lý yêu cầu của bạn.' :
+                        'Sorry, I encountered an error processing your request.';
+                    addMessage(data.error || errorMsg, false, language);
+                    updateStatus(language === 'vi' ? '❌ Lỗi' : '❌ Error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                hideTyping();
+                
+                const errorMsg = language === 'vi' ? 
+                    'Lỗi kết nối. Vui lòng thử lại.' :
+                    'Connection error. Please try again.';
+                addMessage(errorMsg, false, language);
+                updateStatus(language === 'vi' ? '❌ Lỗi kết nối' : '❌ Connection Error');
+            } finally {
+                // Re-enable input
+                isProcessing = false;
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                messageInput.focus();
+            }
+        }
+        
+        // Enter key support
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Language change handler
+        document.getElementById('languageSelect').addEventListener('change', function(e) {
+            const language = e.target.value;
+            const messageInput = document.getElementById('messageInput');
+            
+            if (language === 'vi') {
+                messageInput.placeholder = 'Nhập tin nhắn của bạn...';
+            } else {
+                messageInput.placeholder = 'Type your message...';
+            }
+            
+            // Update user info display
+            if (userInfo && addressingTerms) {
+                const userInfoText = document.getElementById('userInfoText');
+                if (language === 'vi') {
+                    userInfoText.textContent = `Chế độ xưng hô: ${addressingTerms.customer_address} - ${addressingTerms.bot_address} | Tuổi: ${userInfo.age} | Giới tính: ${userInfo.gender === 'male' ? 'Nam' : 'Nữ'}`;
+                } else {
+                    userInfoText.textContent = `Addressing mode: ${addressingTerms.customer_address_en} - ${addressingTerms.bot_address_en} | Age: ${userInfo.age} | Gender: ${userInfo.gender}`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+            '''
+        
+        @self.app.route('/set_user_info', methods=['POST'])
+        def set_user_info():
+            """Set user personal information and return addressing terms"""
+            try:
+                data = request.get_json()
+                if not data or 'gender' not in data or 'age' not in data:
+                    return jsonify({'success': False, 'error': 'Missing user information'})
+                
+                gender = data['gender']
+                age = int(data['age'])
+                
+                # Store user info in session (simple implementation)
+                session_id = request.remote_addr  # Use IP as simple session ID
+                addressing_terms = self.get_addressing_terms(gender, age)
+                
+                self.user_sessions[session_id] = {
+                    'gender': gender,
+                    'age': age,
+                    'addressing_terms': addressing_terms
+                }
+                
+                # Generate personalized welcome message
+                customer_addr = addressing_terms['customer_address']
+                bot_addr = addressing_terms['bot_address']
+                
+                welcome_message = f"""Xin chào {customer_addr}! {bot_addr.title()} là trợ lý AI bán hàng. {bot_addr.title()} rất vui được hỗ trợ {customer_addr} hôm nay.
+
+{customer_addr} đang tìm kiếm sản phẩm gì? {bot_addr.title()} có thể giúp {customer_addr} tìm laptop, phụ kiện gaming, hoặc các sản phẩm công nghệ khác phù hợp với nhu cầu của {customer_addr}.
+
+---
+
+Hello! I am your AI sales assistant. I'm very happy to help you today.
+
+What products are you looking for? I can help you find laptops, gaming accessories, or other technology products that suit your needs."""
+                
+                return jsonify({
+                    'success': True,
+                    'addressing_terms': addressing_terms,
+                    'welcome_message': welcome_message
+                })
+                
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)})
+        
+        @self.app.route('/chat', methods=['POST'])
+        def chat():
+            """Handle chat messages with personalized addressing"""
+            try:
+                data = request.get_json()
+                if not data or 'message' not in data:
+                    return jsonify({'success': False, 'error': 'No message provided'})
+                
+                user_message = data['message']
+                language = data.get('language', 'vi')
+                user_info = data.get('user_info', {})
+                
+                # Get user session info
+                session_id = request.remote_addr
+                session_data = self.user_sessions.get(session_id, {})
+                addressing_terms = session_data.get('addressing_terms', {})
+                
+                # Set the chatbot's current language
+                self.chatbot.current_language = language
+                
+                # Process the message using existing chatbot logic
+                result = self.chatbot.process_message(user_message)
+                
+                # Personalize the response with appropriate addressing
+                response = result.get('response', '')
+                if addressing_terms and language == 'vi':
+                    response = self.personalize_response(response, addressing_terms)
+                
+                return jsonify({
+                    'success': True,
+                    'response': response,
+                    'data_source': result.get('data_source', 'unknown'),
+                    'processing_time': result.get('processing_time', 0),
+                    'user_language': result.get('user_language', language),
+                    'local_results_count': result.get('local_results_count', 0)
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': str(e),
+                    'processing_time': 0
+                })
+    
+    def personalize_response(self, response, addressing_terms):
+        """Personalize response with appropriate Vietnamese addressing terms"""
+        try:
+            customer_addr = addressing_terms.get('customer_address', 'Bạn')
+            bot_addr = addressing_terms.get('bot_address', 'tôi')
+            
+            # Replace common addressing terms in the response
+            replacements = {
+                'bạn': customer_addr.lower(),
+                'Bạn': customer_addr,
+                'tôi': bot_addr,
+                'Tôi': bot_addr.title(),
+                'mình': bot_addr,
+                'Mình': bot_addr.title()
+            }
+            
+            personalized_response = response
+            for old_term, new_term in replacements.items():
+                # Use word boundaries to avoid partial replacements
+                import re
+                pattern = r'\b' + re.escape(old_term) + r'\b'
+                personalized_response = re.sub(pattern, new_term, personalized_response)
+            
+            return personalized_response
+            
+        except Exception as e:
+            # If personalization fails, return original response
+            return response
+    
+    def run(self):
+        """Run the web server"""
+        try:
+            print(f"🌐 Starting enhanced AI sales interface on http://{self.host}:{self.port}")
+            print(f"📱 Local access: http://localhost:{self.port}")
+            
+            # Get local IP for network access
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                s.close()
+                print(f"🌐 Network access: http://{local_ip}:{self.port}")
+            except:
+                pass
+            
+            print("✨ Features:")
+            print("   • Beautiful female AI salesperson with glasses")
+            print("   • Personalized greeting and addressing system")
+            print("   • Professional dialogue-style chat interface")
+            print("   • Vietnamese/English language support")
+            print("   • Responsive design for all devices")
+            
+            self.app.run(host=self.host, port=self.port, debug=False, threaded=True)
+        except Exception as e:
+            print(f"❌ Error starting web server: {e}")
 
 def create_config_file():
     """Create a sample configuration file"""
@@ -2795,19 +3870,21 @@ def main():
     ✅ Smart product search with embeddings
     ✅ Excel, PDF, Word document processing
     ✅ Image OCR with Vietnamese support
-    ✅ Comprehensive error handling
-    ✅ Graceful fallback when components unavailable
-    
-    📋 Requirements:
-    Required: transformers, sentence-transformers, torch, tkinter
-    Optional (for translation): googletrans, langdetect
-    
-    🔧 Installation:
-    pip install torch transformers sentence-transformers
-    pip install googletrans==4.0.0rc1 langdetect   # For translation
+    ✅ Web interface for local network access
+    ✅ Admin GUI for testing and database management
     
     Loading chatbot...
     """)
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Vietnamese AI Sales ChatBot')
+    parser.add_argument('--web', action='store_true', 
+                       help='Start web interface instead of GUI')
+    parser.add_argument('--host', default='0.0.0.0', 
+                       help='Web interface host (default: 0.0.0.0)')
+    parser.add_argument('--port', type=int, default=5000, 
+                       help='Web interface port (default: 5000)')
+    args = parser.parse_args()
     
     try:
         os.makedirs('data', exist_ok=True)
@@ -2820,17 +3897,29 @@ def main():
         print("🤖 Initializing chatbot...")
         chatbot = VietnameseAISalesBot()
         
-        print("🎬 Starting application...")
-        chatbot.run()
+        # Add sample products
+        print("📦 Adding sample products...")
+        chatbot.add_sample_products()
+        
+        if args.web:
+            # Start web interface
+            print("🌐 Starting web interface...")
+            web_interface = WebChatInterface(chatbot, host=args.host, port=args.port)
+            web_interface.run()
+        else:
+            # Start GUI interface (existing functionality)
+            print("🖥️ Starting GUI interface...")
+            chatbot.display_welcome_message()
+            chatbot.root.mainloop()
         
     except KeyboardInterrupt:
         print("\n👋 ChatBot stopped by user")
     except Exception as e:
         print(f"❌ Error starting chatbot: {e}")
         print("\n🔧 Troubleshooting tips:")
-        print("1. Ensure all required packages are installed")
-        print("2. Check if CUDA is available for GPU acceleration")
-        print("3. Check internet connection for model downloads")
+        print("1. Ensure all required packages are installed: pip install flask")
+        print("2. Check if the port is available")
+        print("3. For GUI mode, ensure tkinter is available")
         
         import traceback
         traceback.print_exc()
