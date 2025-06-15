@@ -13,6 +13,10 @@ import logging
 from pathlib import Path
 import re
 import yaml
+# Excel import functionality
+from openpyxl import load_workbook
+from typing import Dict, List, Any
+import contextlib
 # NEW IMPORTS FOR AI GENERATING SALES PERSON IN WEB CHATBOT
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
@@ -149,7 +153,130 @@ def create_config_file():
         yaml.dump(config, file, default_flow_style=False, allow_unicode=True)
     
     print("✅ RTX 4090 optimized configuration created: chatbot_config.yaml")
+class SmartExcelReader:
+    def __init__(self):
+        self.supported_formats = {'.xlsx', '.xls', '.xlsm', '.csv'}
+    
+    def read_file_optimized(self, filepath, sheet_name=0):
+        """Automatically select best reading method based on file size and format"""
+        file_path = Path(filepath)
+        file_size = file_path.stat().st_size
+        
+        # For files < 50MB, use pandas directly
+        if file_size < 50 * 1024 * 1024:
+            if file_path.suffix.lower() == '.csv':
+                return pd.read_csv(filepath, encoding='utf-8-sig')
+            return pd.read_excel(filepath, sheet_name=sheet_name, engine='openpyxl')
+        
+        # For larger files, use openpyxl read-only mode
+        wb = load_workbook(filepath, read_only=True, data_only=True)
+        ws = wb[sheet_name] if isinstance(sheet_name, str) else wb.worksheets[sheet_name]
+        
+        data = list(ws.values)
+        return pd.DataFrame(data[1:], columns=data[0]) if data else pd.DataFrame()
 
+class DataProcessor:
+    def __init__(self, category: str):
+        self.category = category
+        self.column_mappings = {
+            'SSD': {
+                'product_name': ['Sản phẩm', 'Product Name', 'Name', 'Item', 'Product'],
+                'model': ['Model', 'Model Name'],
+                'interface': ['Giao thức', 'Interface', 'Connection', 'Type'],
+                'specifications': ['Thông số', 'Specifications', 'Specs'],
+                'stock_status': ['Kho', 'Stock', 'Availability', 'Status'],
+                'price': ['Giá bán lẻ', 'Price', 'Cost', 'Amount']
+            },
+            'Memory': {
+                'product_name': ['Sản phẩm', 'Product Name', 'Name', 'Item'],
+                'model': ['Model', 'Model Name'],
+                'interface': ['Giao thức', 'Interface', 'Type'],
+                'specifications': ['Thông số', 'Specifications', 'Specs'],
+                'stock_status': ['Kho', 'Stock', 'Availability'],
+                'price': ['Giá bán lẻ', 'Price', 'Cost', 'Amount']
+            },
+            'Motherboard': {
+                'product_name': ['Sản phẩm', 'Product Name', 'Name', 'Item'],
+                'model': ['Model', 'Model Name'],
+                'chipset': ['Chipset', 'Chip Set'],
+                'specifications': ['Thông số', 'Specifications', 'Specs'],
+                'stock_status': ['Kho', 'Stock', 'Availability'],
+                'price': ['Giá bán lẻ', 'Price', 'Cost', 'Amount']
+            }
+        }
+    
+    def process_excel_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Process and validate Excel data for database insertion"""
+        # Map columns
+        mapped_df = self._map_columns(df)
+        
+        # Validate data types
+        validated_df = self._validate_data_types(mapped_df)
+        
+        # Clean and transform data
+        cleaned_df = self._clean_data(validated_df)
+        
+        # Add metadata
+        cleaned_df['category'] = self.category
+        cleaned_df['source_file'] = 'Excel Import'
+        cleaned_df['created_at'] = datetime.now().isoformat()
+        
+        return cleaned_df
+    
+    def _map_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Intelligently map Excel columns to database fields"""
+        mapping = self.column_mappings[self.category]
+        result_df = pd.DataFrame()
+        
+        for db_field, possible_names in mapping.items():
+            # Find matching column
+            matched_column = None
+            for excel_col in df.columns:
+                if any(name.lower() in excel_col.lower() for name in possible_names):
+                    matched_column = excel_col
+                    break
+            
+            if matched_column:
+                result_df[db_field] = df[matched_column]
+            else:
+                # Handle missing columns with defaults
+                if db_field in ['specifications', 'stock_status']:
+                    result_df[db_field] = 'N/A'
+                else:
+                    result_df[db_field] = ''
+        
+        return result_df
+    
+    def _validate_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Validate and convert data types"""
+        # Price validation and conversion
+        if 'price' in df.columns:
+            df['price'] = pd.to_numeric(
+                df['price'].astype(str).str.replace(r'[^\d.]', '', regex=True),
+                errors='coerce'
+            )
+            # Fill missing prices with 0
+            df['price'] = df['price'].fillna(0)
+        
+        return df
+    
+    def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Clean and prepare data for database insertion"""
+        # Remove completely empty rows
+        df = df.dropna(how='all')
+        
+        # Clean string columns
+        string_columns = ['product_name', 'model', 'interface', 'specifications', 'stock_status']
+        for col in string_columns:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+                df[col] = df[col].replace(['nan', 'None', ''], 'N/A')
+        
+        # Handle missing required fields
+        if 'product_name' in df.columns:
+            df = df[df['product_name'] != 'N/A']
+        
+        return df
 class VietnameseAISalesBot:
     """
     RTX 4090 Optimized AI Sales ChatBot with Vietnamese language support
@@ -164,11 +291,30 @@ class VietnameseAISalesBot:
         self.initialize_ai_models_rtx4090()  # RTX 4090 optimized initialization
         self.conversation_context = []
         self.conversation_summary = ""
+        # Initialize product databases
+        self.ssd_database = []
+        self.memory_database = []
+        self.motherboard_database = []
         self.response_cache = {}  # Add response caching
         self.customer_profiles = {}  # Store customer profiles by session ID
         if start_gui:
             self.setup_gui()
-    
+        # Debug database location
+        # Debug database location
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.db_path = os.path.join(script_dir, 'chatbot_data.db')
+
+        print(f"📁 Script directory: {script_dir}")
+        print(f"📁 Database path: {self.db_path}")
+        print(f"📊 Database exists: {os.path.exists(self.db_path)}")
+
+        # Always use the database in the script directory
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        print(f"✅ Connected to database at: {self.db_path}")
+
+        # Continue with setup_database
+        self.setup_database()
     def load_config(self):
         """Load RTX 4090 optimized configuration"""
         try:
@@ -307,6 +453,20 @@ class VietnameseAISalesBot:
             return text
     
     def setup_database(self):
+        """Initialize SQLite database with correct path"""
+        import os
+        
+        # Define the exact path where you want the database
+        # Option 1: Same folder as the script
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chatbot_data.db')
+        
+        # Option 2: In the parent folder (E:\SSTCCloud\AI CHATBOT\)
+        # db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'chatbot_data.db')
+        
+        print(f"📁 Using database at: {db_path}")
+        
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn.execute("PRAGMA encoding = 'UTF-8'")
         """Initialize SQLite database with RTX 4090 optimizations"""
         self.conn = sqlite3.connect('chatbot_data.db', check_same_thread=False)
         self.conn.execute("PRAGMA encoding = 'UTF-8'")
@@ -1139,7 +1299,7 @@ class VietnameseAISalesBot:
                     greeting_flow = self.config['conversation_flows'].get('greeting', {})
                     greeting_triggers = greeting_flow.get('triggers', [])
                     if any(trigger.lower() in user_input.lower() for trigger in greeting_triggers):
-                        return greeting_flow.get('response_template', 'Hello! I am your RTX 4090-powered AI assistant!')
+                        return greeting_flow.get('response_template', 'Hello! I am your RTX 4090-powered Sales Consultant!')
             except Exception as e:
                 self.logger.warning(f"Greeting pattern matching error: {e}")
             
@@ -2132,7 +2292,7 @@ class VietnameseAISalesBot:
     def setup_gui(self):
         """Setup the GUI interface with Vietnamese font support"""
         self.root = tk.Tk()
-        self.root.title("RTX 4090 Optimized Vietnamese AI Sales ChatBot")
+        self.root.title("SSTC SUPER SALES")
         self.root.geometry("1400x900")
         
         self.setup_vietnamese_fonts()
@@ -2200,7 +2360,7 @@ class VietnameseAISalesBot:
     def setup_chat_tab(self):
         """Setup the main chat interface"""
         chat_frame = ttk.Frame(self.notebook)
-        self.notebook.add(chat_frame, text="💬 RTX 4090 Chat")
+        self.notebook.add(chat_frame, text="💬Chat")
         
         top_frame = ttk.Frame(chat_frame)
         top_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -2267,36 +2427,649 @@ class VietnameseAISalesBot:
         
         self.processing_label = ttk.Label(status_frame, text="", font=self.vietnamese_font)
         self.processing_label.pack(side=tk.RIGHT)
+        
+    def on_language_change(self, event=None):
+        """Handle language change"""
+        try:
+            self.current_language = self.language_var.get()
+            print(f"Language changed to: {self.current_language}")
+        except Exception as e:
+            print(f"Language change error: {e}")
     
     def setup_database_tab(self):
-        """Setup database management interface"""
+        """Setup database management interface with product categories"""
         db_frame = ttk.Frame(self.notebook)
         self.notebook.add(db_frame, text="🗄️ Database")
         
-        product_frame = ttk.LabelFrame(db_frame, text="RTX 4090 Optimized Product Database")
-        product_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # Add control panel with import button
+        control_frame = ttk.Frame(db_frame)
+        control_frame.pack(fill='x', padx=10, pady=5)
         
-        btn_frame = ttk.Frame(product_frame)
-        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(control_frame, text="📊 Import Excel File", 
+                  command=self.open_import_dialog).pack(side='left', padx=5)
         
-        ttk.Button(btn_frame, text="Add Sample Products", 
-                  command=self.add_sample_products).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="View Products", 
-                  command=self.view_products).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="RTX 4090 Search Test", 
-                  command=self.test_search).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Regenerate Embeddings", 
-                  command=self.regenerate_all_embeddings).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="🔄 Refresh All", 
+                  command=self.refresh_all_tabs).pack(side='left', padx=5)
+        # ADD Check Database BUTTON:
+        ttk.Button(control_frame, text="🔍 Check Database", 
+                  command=self.view_database_contents).pack(side='left', padx=5)
+        # ADD Remove Item Button:
+        ttk.Button(control_frame, text="🗑️ Remove Item", 
+                  command=self.remove_selected_item).pack(side='left', padx=5)
+        # Create sub-notebook for product categories
+        self.db_sub_notebook = ttk.Notebook(db_frame)
+        self.db_sub_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            
+        # Initialize product databasess
+        self.ssd_database = []
+        self.memory_database = []
+        self.motherboard_database = []
         
-        self.product_display = scrolledtext.ScrolledText(
-            product_frame, height=15, state=tk.DISABLED, font=self.vietnamese_font
-        )
-        self.product_display.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Create individual product tabs
+        self.create_ssd_tab()
+        self.create_memory_tab()
+        self.create_motherboard_tab()
+    def create_ssd_tab(self):
+        """Create SSD products tab based on Excel template"""
+        ssd_frame = ttk.Frame(self.db_sub_notebook)
+        self.db_sub_notebook.add(ssd_frame, text="SSD")
+        
+        # Create input fields based on Excel template structure
+        fields_frame = ttk.LabelFrame(ssd_frame, text="Add SSD Product", padding="10")
+        fields_frame.pack(fill='x', padx=10, pady=10)
+        
+        # Input fields matching Excel template: STT, Sản phẩm, Giao thức, Model, Thông số, Kho, Giá bán lẻ
+        ttk.Label(fields_frame, text="Sản phẩm:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.ssd_product = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.ssd_product.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Giao thức:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.ssd_interface = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.ssd_interface.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Model:").grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        self.ssd_model = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.ssd_model.grid(row=2, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Thông số:").grid(row=3, column=0, sticky='w', padx=5, pady=5)
+        self.ssd_specs = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.ssd_specs.grid(row=3, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Kho:").grid(row=4, column=0, sticky='w', padx=5, pady=5)
+        self.ssd_stock = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.ssd_stock.grid(row=4, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Giá bán lẻ:").grid(row=5, column=0, sticky='w', padx=5, pady=5)
+        self.ssd_price = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.ssd_price.grid(row=5, column=1, padx=5, pady=5)
+        
+        # Add Product button
+        ttk.Button(fields_frame, text="Add Product", 
+                   command=lambda: self.add_product('ssd')).grid(row=6, column=0, columnspan=2, pady=10)
+        
+        # Product display area
+        display_frame = ttk.LabelFrame(ssd_frame, text="SSD Products", padding="10")
+        display_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Treeview for displaying products
+        self.ssd_tree = ttk.Treeview(display_frame, columns=('STT', 'Product', 'Interface', 'Model', 'Specs', 'Stock', 'Price'), 
+                                     show='headings', height=10)
+        
+        # Configure columns
+        self.ssd_tree.heading('STT', text='STT')
+        self.ssd_tree.heading('Product', text='Sản phẩm')
+        self.ssd_tree.heading('Interface', text='Giao thức')
+        self.ssd_tree.heading('Model', text='Model')
+        self.ssd_tree.heading('Specs', text='Thông số')
+        self.ssd_tree.heading('Stock', text='Kho')
+        self.ssd_tree.heading('Price', text='Giá bán lẻ')
+        
+        # Column widths
+        self.ssd_tree.column('STT', width=50)
+        self.ssd_tree.column('Product', width=200)
+        self.ssd_tree.column('Interface', width=100)
+        self.ssd_tree.column('Model', width=150)
+        self.ssd_tree.column('Specs', width=200)
+        self.ssd_tree.column('Stock', width=100)
+        self.ssd_tree.column('Price', width=100)
+        
+        self.ssd_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Scrollbar
+        scrollbar_ssd = ttk.Scrollbar(display_frame, orient='vertical', command=self.ssd_tree.yview)
+        scrollbar_ssd.pack(side='right', fill='y')
+        self.ssd_tree.configure(yscrollcommand=scrollbar_ssd.set)
+
+    def create_memory_tab(self):
+        """Create Memory products tab based on Excel template"""
+        memory_frame = ttk.Frame(self.db_sub_notebook)
+        self.db_sub_notebook.add(memory_frame, text="Memory")
+        
+        # Create input fields based on Excel template structure
+        fields_frame = ttk.LabelFrame(memory_frame, text="Add Memory Product", padding="10")
+        fields_frame.pack(fill='x', padx=10, pady=10)
+        
+        # Input fields matching Excel template: STT, Sản phẩm, Giao thức, Model, Thông số, Kho, Giá bán lẻ
+        ttk.Label(fields_frame, text="Sản phẩm:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.memory_product = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.memory_product.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Giao thức:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.memory_interface = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.memory_interface.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Model:").grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        self.memory_model = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.memory_model.grid(row=2, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Thông số:").grid(row=3, column=0, sticky='w', padx=5, pady=5)
+        self.memory_specs = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.memory_specs.grid(row=3, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Kho:").grid(row=4, column=0, sticky='w', padx=5, pady=5)
+        self.memory_stock = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.memory_stock.grid(row=4, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Giá bán lẻ:").grid(row=5, column=0, sticky='w', padx=5, pady=5)
+        self.memory_price = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.memory_price.grid(row=5, column=1, padx=5, pady=5)
+        
+        # Add Product button
+        ttk.Button(fields_frame, text="Add Product", 
+                   command=lambda: self.add_product('memory')).grid(row=6, column=0, columnspan=2, pady=10)
+        
+        # Product display area
+        display_frame = ttk.LabelFrame(memory_frame, text="Memory Products", padding="10")
+        display_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Treeview for displaying products
+        self.memory_tree = ttk.Treeview(display_frame, columns=('STT', 'Product', 'Interface', 'Model', 'Specs', 'Stock', 'Price'), 
+                                       show='headings', height=10)
+        
+        # Configure columns
+        self.memory_tree.heading('STT', text='STT')
+        self.memory_tree.heading('Product', text='Sản phẩm')
+        self.memory_tree.heading('Interface', text='Giao thức')
+        self.memory_tree.heading('Model', text='Model')
+        self.memory_tree.heading('Specs', text='Thông số')
+        self.memory_tree.heading('Stock', text='Kho')
+        self.memory_tree.heading('Price', text='Giá bán lẻ')
+        
+        # Column widths
+        self.memory_tree.column('STT', width=50)
+        self.memory_tree.column('Product', width=200)
+        self.memory_tree.column('Interface', width=120)
+        self.memory_tree.column('Model', width=150)
+        self.memory_tree.column('Specs', width=200)
+        self.memory_tree.column('Stock', width=100)
+        self.memory_tree.column('Price', width=100)
+        
+        self.memory_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Scrollbar
+        scrollbar_memory = ttk.Scrollbar(display_frame, orient='vertical', command=self.memory_tree.yview)
+        scrollbar_memory.pack(side='right', fill='y')
+        self.memory_tree.configure(yscrollcommand=scrollbar_memory.set)
+
+    def create_motherboard_tab(self):
+        """Create Motherboard products tab based on Excel template"""
+        motherboard_frame = ttk.Frame(self.db_sub_notebook)
+        self.db_sub_notebook.add(motherboard_frame, text="Motherboard")
+        
+        # Create input fields based on Excel template structure
+        fields_frame = ttk.LabelFrame(motherboard_frame, text="Add Motherboard Product", padding="10")
+        fields_frame.pack(fill='x', padx=10, pady=10)
+        
+        # Input fields matching Excel template: STT, Sản phẩm, Chipset, Model, Thông số, Kho, Giá bán lẻ
+        ttk.Label(fields_frame, text="Sản phẩm:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.mb_product = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.mb_product.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Chipset:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.mb_chipset = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.mb_chipset.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Model:").grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        self.mb_model = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.mb_model.grid(row=2, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Thông số:").grid(row=3, column=0, sticky='w', padx=5, pady=5)
+        self.mb_specs = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.mb_specs.grid(row=3, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Kho:").grid(row=4, column=0, sticky='w', padx=5, pady=5)
+        self.mb_stock = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.mb_stock.grid(row=4, column=1, padx=5, pady=5)
+        
+        ttk.Label(fields_frame, text="Giá bán lẻ:").grid(row=5, column=0, sticky='w', padx=5, pady=5)
+        self.mb_price = ttk.Entry(fields_frame, width=40, font=self.input_font)
+        self.mb_price.grid(row=5, column=1, padx=5, pady=5)
+        
+        # Add Product button
+        ttk.Button(fields_frame, text="Add Product", 
+                   command=lambda: self.add_product('motherboard')).grid(row=6, column=0, columnspan=2, pady=10)
+        
+        # Product display area
+        display_frame = ttk.LabelFrame(motherboard_frame, text="Motherboard Products", padding="10")
+        display_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Treeview for displaying products
+        self.mb_tree = ttk.Treeview(display_frame, columns=('STT', 'Product', 'Chipset', 'Model', 'Specs', 'Stock', 'Price'), 
+                                   show='headings', height=10)
+        
+        # Configure columns
+        self.mb_tree.heading('STT', text='STT')
+        self.mb_tree.heading('Product', text='Sản phẩm')
+        self.mb_tree.heading('Chipset', text='Chipset')
+        self.mb_tree.heading('Model', text='Model')
+        self.mb_tree.heading('Specs', text='Thông số')
+        self.mb_tree.heading('Stock', text='Kho')
+        self.mb_tree.heading('Price', text='Giá bán lẻ')
+        
+        # Column widths
+        self.mb_tree.column('STT', width=50)
+        self.mb_tree.column('Product', width=200)
+        self.mb_tree.column('Chipset', width=100)
+        self.mb_tree.column('Model', width=150)
+        self.mb_tree.column('Specs', width=250)
+        self.mb_tree.column('Stock', width=100)
+        self.mb_tree.column('Price', width=100)
+        
+        self.mb_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Scrollbar
+        scrollbar_mb = ttk.Scrollbar(display_frame, orient='vertical', command=self.mb_tree.yview)
+        scrollbar_mb.pack(side='right', fill='y')
+        self.mb_tree.configure(yscrollcommand=scrollbar_mb.set)
+   
+    def add_product(self, product_type):
+        """Add a product to the appropriate database"""
+        try:
+            if product_type == 'ssd':
+                # Get values from SSD input fields
+                product = {
+                    'product': self.ssd_product.get(),
+                    'interface': self.ssd_interface.get(),
+                    'model': self.ssd_model.get(),
+                    'specifications': self.ssd_specs.get(),
+                    'stock_status': self.ssd_stock.get(),
+                    'price': self.ssd_price.get(),
+                    'category': 'SSD'
+                }
+                
+                # Validate inputs
+                if all(product.values()):
+                    # Generate auto-incrementing number
+                    stt = len(self.ssd_database) + 1
+                    
+                    # Add to database list
+                    product['stt'] = stt
+                    self.ssd_database.append(product)
+                    
+                    # Parse price for database storage
+                    try:
+                        price_num = float(product['price'].replace(',', '').replace(' ', ''))
+                    except:
+                        price_num = 0
+                    
+                    # STANDARDIZED DATABASE INSERTION - Same as sample products
+                    cursor = self.conn.cursor()
+                    
+                    # Build text for embedding - SAME AS SAMPLE PRODUCTS
+                    combined_text = f"{product.get('product', '')} {product.get('model', '')} {product.get('specifications', '')}"
+                    
+                    embedding_blob = None
+                    if self.embedding_model:
+                        try:
+                            embedding = self.embedding_model.encode([combined_text])[0]
+                            embedding_blob = embedding.astype(np.float32).tobytes()
+                        except Exception as e:
+                            self.logger.warning(f"Embedding generation error: {e}")
+                    
+                    # EXACT SAME INSERT STRUCTURE AS SAMPLE PRODUCTS
+                    cursor.execute('''
+                        INSERT INTO products 
+                        (name, description, category, price, features, specifications, availability,
+                         source_file, embedding, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        product['model'],           # model -> name (SAME mapping)
+                        product['product'],         # product -> description (SAME mapping)
+                        product['category'],
+                        price_num,
+                        product['interface'],       # interface -> features (SAME mapping)
+                        product['specifications'],
+                        product['stock_status'],    # stock_status -> availability (SAME mapping)
+                        'Manual Entry',
+                        embedding_blob,
+                        datetime.now().isoformat()
+                    ))
+                    self.conn.commit()
+                    
+                    # Add to treeview
+                    self.ssd_tree.insert('', 'end', values=(
+                        stt, product['product'], product['interface'], product['model'],
+                        product['specifications'], product['stock_status'], product['price']
+                    ))
+                    
+                    # Clear input fields
+                    self.clear_ssd_fields()
+                    self.show_message("Success", "SSD product added successfully!")
+                else:
+                    self.show_message("Error", "Please fill all fields!")
+            
+            elif product_type == 'memory':
+                # Same structure for Memory products
+                product = {
+                    'product': self.memory_product.get(),
+                    'interface': self.memory_interface.get(),
+                    'model': self.memory_model.get(),
+                    'specifications': self.memory_specs.get(),
+                    'stock_status': self.memory_stock.get(),
+                    'price': self.memory_price.get(),
+                    'category': 'Memory'
+                }
+                # ... rest of memory code with SAME database insertion pattern
+                
+            elif product_type == 'motherboard':
+                # Note: Motherboard uses 'chipset' in GUI but maps to 'features' in database
+                product = {
+                    'product': self.mb_product.get(),
+                    'chipset': self.mb_chipset.get(),  # GUI field name
+                    'model': self.mb_model.get(),
+                    'specifications': self.mb_specs.get(),
+                    'stock_status': self.mb_stock.get(),
+                    'price': self.mb_price.get(),
+                    'category': 'Motherboard'
+                }
+                
+                # ... validation code ...
+                
+                # In database insertion, map chipset to features
+                cursor.execute('''
+                    INSERT INTO products 
+                    (name, description, category, price, features, specifications, availability,
+                     source_file, embedding, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    product['model'],
+                    product['product'],
+                    product['category'],
+                    price_num,
+                    product['chipset'],     # chipset -> features for motherboard
+                    product['specifications'],
+                    product['stock_status'],
+                    'Manual Entry',
+                    embedding_blob,
+                    datetime.now().isoformat()
+                ))
+                
+        except Exception as e:
+            self.show_message("Error", f"Error adding product: {str(e)}")
+
+    def clear_ssd_fields(self):
+        """Clear SSD input fields"""
+        self.ssd_product.delete(0, 'end')
+        self.ssd_interface.delete(0, 'end')
+        self.ssd_model.delete(0, 'end')
+        self.ssd_specs.delete(0, 'end')
+        self.ssd_stock.delete(0, 'end')
+        self.ssd_price.delete(0, 'end')
+
+    def clear_memory_fields(self):
+        """Clear Memory input fields"""
+        self.memory_product.delete(0, 'end')
+        self.memory_interface.delete(0, 'end')
+        self.memory_model.delete(0, 'end')
+        self.memory_specs.delete(0, 'end')
+        self.memory_stock.delete(0, 'end')
+        self.memory_price.delete(0, 'end')
+
+    def clear_motherboard_fields(self):
+        """Clear Motherboard input fields"""
+        self.mb_product.delete(0, 'end')
+        self.mb_chipset.delete(0, 'end')
+        self.mb_model.delete(0, 'end')
+        self.mb_specs.delete(0, 'end')
+        self.mb_stock.delete(0, 'end')
+        self.mb_price.delete(0, 'end')
+
+    def show_message(self, title, message):
+        """Show message dialog"""
+        from tkinter import messagebox
+        messagebox.showinfo(title, message)
     
+    def bulk_insert_products(self, category: str, df: pd.DataFrame) -> Dict[str, int]:
+        """Perform bulk insert with comprehensive error handling"""
+        result = {
+            'total_records': len(df),
+            'successful': 0,
+            'duplicates': 0,
+            'errors': 0,
+            'error_details': []
+        }
+        try:
+            cursor = self.conn.cursor()
+            
+            for index, row in df.iterrows():
+                try:
+                    # Check for existing product
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM products 
+                        WHERE name = ? AND category = ?
+                    """, (row.get('model', ''), category))
+                    
+                    if cursor.fetchone()[0] > 0:
+                        result['duplicates'] += 1
+                        continue
+                    
+                    # Create searchable text
+                    combined_text = f"{row.get('product_name', '')} {row.get('model', '')} {row.get('specifications', '')}"
+                    
+                    # Generate embedding if model available
+                    embedding_blob = None
+                    if self.embedding_model and combined_text.strip():
+                        try:
+                            embedding = self.embedding_model.encode([combined_text])[0]
+                            embedding_blob = embedding.astype(np.float32).tobytes()
+                        except Exception as e:
+                            print(f"Embedding generation failed: {e}")
+                    
+                    # Insert into database
+                    cursor.execute('''
+                        INSERT INTO products 
+                        (name, description, category, price, features, specifications, availability,
+                         source_file, embedding, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        row.get('model', ''),
+                        row.get('product_name', ''),
+                        category,
+                        float(row.get('price', 0)),
+                        row.get('specifications', ''),
+                        f"{row.get('interface', '')} {row.get('chipset', '')}".strip(),
+                        row.get('stock_status', 'Available'),
+                        'Excel Import',
+                        embedding_blob,
+                        datetime.now().isoformat()
+                    ))
+                    
+                    result['successful'] += 1
+                    
+                except Exception as e:
+                    result['errors'] += 1
+                    result['error_details'].append({
+                        'product': row.get('product_name', f'Row {index}'),
+                        'error': str(e)
+                    })
+            
+            self.conn.commit()
+            
+            # Refresh the appropriate tab
+            self.refresh_category_view_after_import(category)
+            
+        except Exception as e:
+            self.conn.rollback()
+            raise Exception(f"Database operation failed: {str(e)}")
+        return result
+
+    def refresh_category_view_after_import(self, category):
+        """Refresh TreeView after import"""
+        try:
+            if category == 'SSD' and hasattr(self, 'ssd_tree'):
+                self.refresh_ssd_tree()
+            elif category == 'Memory' and hasattr(self, 'memory_tree'):
+                self.refresh_memory_tree()
+            elif category == 'Motherboard' and hasattr(self, 'mb_tree'):
+                self.refresh_motherboard_tree()
+        except Exception as e:
+            print(f"Error refreshing tree view: {e}")
+            
+    def open_import_dialog(self):
+        """Open the Excel import dialog"""
+        try:
+            ExcelImportDialog(self.root, self)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open import dialog: {str(e)}")
+
+    def refresh_all_tabs(self):
+        """Refresh all product tabs"""
+        try:
+            self.refresh_ssd_tree()
+            self.refresh_memory_tree()
+            self.refresh_motherboard_tree()
+            messagebox.showinfo("Success", "All tabs refreshed successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error refreshing tabs: {str(e)}")                
+        except Exception as e:
+            print(f"Error refreshing tree view: {e}")
+
+    def refresh_ssd_tree(self):
+        """Refresh SSD TreeView"""
+        try:
+            # Clear existing items
+            for item in self.ssd_tree.get_children():
+                self.ssd_tree.delete(item)
+            
+            # Reload from database
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT * FROM products WHERE category = 'SSD' ORDER BY created_at")
+            products = cursor.fetchall()
+            
+            for i, product in enumerate(products, 1):
+                if len(product) >= 6:
+                    self.ssd_tree.insert('', 'end', values=(
+                        i, product[2] or 'SSD Product', product[6] or 'Interface', 
+                        product[1] or '', product[6] or '', product[8] or 'Available', 
+                        f"{product[5] or 0:,.0f}"
+                    ))
+        except Exception as e:
+            print(f"Error refreshing SSD tree: {e}")
+
+    def refresh_memory_tree(self):
+        """Refresh Memory TreeView"""
+        try:
+            for item in self.memory_tree.get_children():
+                self.memory_tree.delete(item)
+            
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT * FROM products WHERE category = 'Memory' ORDER BY created_at")
+            products = cursor.fetchall()
+            
+            for i, product in enumerate(products, 1):
+                if len(product) >= 6:
+                    self.memory_tree.insert('', 'end', values=(
+                        i, product[2] or 'Memory Product', product[6] or 'Interface', 
+                        product[1] or '', product[6] or '', product[8] or 'Available', 
+                        f"{product[5] or 0:,.0f}"
+                    ))
+        except Exception as e:
+            print(f"Error refreshing Memory tree: {e}")
+
+    def refresh_motherboard_tree(self):
+        """Refresh Motherboard TreeView"""
+        try:
+            for item in self.mb_tree.get_children():
+                self.mb_tree.delete(item)
+            
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT * FROM products WHERE category = 'Motherboard' ORDER BY created_at")
+            products = cursor.fetchall()
+            
+            for i, product in enumerate(products, 1):
+                if len(product) >= 6:
+                    self.mb_tree.insert('', 'end', values=(
+                        i, product[2] or 'Motherboard Product', product[7] or 'Chipset', 
+                        product[1] or '', product[6] or '', product[8] or 'Available', 
+                        f"{product[5] or 0:,.0f}"
+                    ))
+        except Exception as e:
+            print(f"Error refreshing Motherboard tree: {e}")
+            
+    def load_existing_products_to_tabs(self):
+        """Load existing products from database into respective tabs"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Load SSD products
+            cursor.execute("SELECT * FROM products WHERE category = 'SSD' ORDER BY created_at")
+            ssd_products = cursor.fetchall()
+            for i, product in enumerate(ssd_products, 1):
+                if len(product) >= 6:  # Ensure we have enough columns
+                    # Map database fields to display format
+                    product_name = product[1] if product[1] else 'SSD Product'
+                    model = product[1] if product[1] else ''
+                    price = product[5] if product[5] else 0
+                    features = product[6] if len(product) > 6 and product[6] else ''
+                    specs = product[7] if len(product) > 7 and product[7] else ''
+                    availability = product[8] if len(product) > 8 and product[8] else 'Còn hàng'
+                    
+                    self.ssd_tree.insert('', 'end', values=(
+                        i, product_name, 'M2 NVMe', model, features, availability, f"{price:,.0f}"
+                    ))
+            
+            # Load Memory products  
+            cursor.execute("SELECT * FROM products WHERE category = 'Memory' ORDER BY created_at")
+            memory_products = cursor.fetchall()
+            for i, product in enumerate(memory_products, 1):
+                if len(product) >= 6:
+                    product_name = product[1] if product[1] else 'Memory Product'
+                    model = product[1] if product[1] else ''
+                    price = product[5] if product[5] else 0
+                    features = product[6] if len(product) > 6 and product[6] else ''
+                    specs = product[7] if len(product) > 7 and product[7] else ''
+                    availability = product[8] if len(product) > 8 and product[8] else 'Còn hàng'
+                    
+                    self.memory_tree.insert('', 'end', values=(
+                        i, product_name, 'DDR4/DDR5', model, features, availability, f"{price:,.0f}"
+                    ))
+            
+            # Load Motherboard products
+            cursor.execute("SELECT * FROM products WHERE category = 'Motherboard' ORDER BY created_at")
+            mb_products = cursor.fetchall()
+            for i, product in enumerate(mb_products, 1):
+                if len(product) >= 6:
+                    product_name = product[1] if product[1] else 'Motherboard Product'
+                    model = product[1] if product[1] else ''
+                    price = product[5] if product[5] else 0
+                    features = product[6] if len(product) > 6 and product[6] else ''
+                    specs = product[7] if len(product) > 7 and product[7] else ''
+                    availability = product[8] if len(product) > 8 and product[8] else 'Còn hàng'
+                    
+                    self.mb_tree.insert('', 'end', values=(
+                        i, product_name, 'Intel/AMD', model, features, availability, f"{price:,.0f}"
+                    ))
+                    
+            print(f"✅ Loaded {len(ssd_products)} SSD, {len(memory_products)} Memory, {len(mb_products)} Motherboard products to tabs")
+                    
+        except Exception as e:
+            print(f"Error loading existing products: {e}")
+
+        
     def setup_training_tab(self):
         """Setup training interface with file upload capabilities"""
         training_frame = ttk.Frame(self.notebook)
-        self.notebook.add(training_frame, text="📚 RTX 4090 Training")
+        self.notebook.add(training_frame, text="📚 Data Training")
         
         upload_frame = ttk.LabelFrame(training_frame, text="RTX 4090 Optimized Training Data Upload")
         upload_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -2334,7 +3107,7 @@ class VietnameseAISalesBot:
     def setup_analytics_tab(self):
         """Setup analytics interface"""
         analytics_frame = ttk.Frame(self.notebook)
-        self.notebook.add(analytics_frame, text="📊 RTX 4090 Analytics")
+        self.notebook.add(analytics_frame, text="📊 Data Analytics")
         
         metrics_frame = ttk.LabelFrame(analytics_frame, text="RTX 4090 Performance Metrics")
         metrics_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -2534,107 +3307,7 @@ class VietnameseAISalesBot:
                 
             except Exception as e:
                 self.update_training_status(f"❌ RTX 4090 error processing {os.path.basename(file_path)}: {e}")
-    
-    def add_sample_products(self):
-        """Add Vietnamese sample products with RTX 4090 optimization"""
-        sample_products = [
-            {
-                'name': 'RTX 4090 Gaming Laptop Ultimate',
-                'name_vietnamese': 'Laptop Gaming RTX 4090 Tối Ưu',
-                'description': 'Ultimate gaming laptop powered by RTX 4090, 32GB RAM, 2TB SSD, perfect for AI development and extreme gaming',
-                'description_vietnamese': 'Laptop gaming tối thượng được trang bị RTX 4090, RAM 32GB, SSD 2TB, hoàn hảo cho phát triển AI và gaming cực mạnh',
-                'category': 'Gaming Laptops',
-                'category_vietnamese': 'Laptop Gaming',
-                'price': 4999.99,
-                'features': 'RTX 4090, Intel i9-13900H, 32GB DDR5, 2TB NVMe SSD, 17.3" 4K 240Hz display',
-                'features_vietnamese': 'RTX 4090, Intel i9-13900H, RAM DDR5 32GB, SSD NVMe 2TB, màn hình 17.3" 4K 240Hz'
-            },
-            {
-                'name': 'AI Development Workstation RTX 4090',
-                'name_vietnamese': 'Máy trạm Phát triển AI RTX 4090',
-                'description': 'Professional AI development workstation with RTX 4090, 64GB RAM, optimized for machine learning and deep learning',
-                'description_vietnamese': 'Máy trạm phát triển AI chuyên nghiệp với RTX 4090, RAM 64GB, tối ưu cho machine learning và deep learning',
-                'category': 'Workstations',
-                'category_vietnamese': 'Máy trạm',
-                'price': 6999.99,
-                'features': 'RTX 4090, Intel Xeon, 64GB ECC RAM, 4TB NVMe RAID, CUDA optimization',
-                'features_vietnamese': 'RTX 4090, Intel Xeon, RAM ECC 64GB, RAID NVMe 4TB, tối ưu CUDA'
-            },
-            {
-                'name': 'Gaming Desktop RTX 4090 Beast',
-                'name_vietnamese': 'PC Gaming RTX 4090 Siêu Mạnh',
-                'description': 'Custom gaming desktop with RTX 4090, liquid cooling, RGB lighting, built for 4K gaming at max settings',
-                'description_vietnamese': 'PC gaming tùy chỉnh với RTX 4090, tản nhiệt nước, đèn RGB, được xây dựng cho gaming 4K ở cài đặt tối đa',
-                'category': 'Gaming Desktops',
-                'category_vietnamese': 'PC Gaming',
-                'price': 3999.99,
-                'features': 'RTX 4090, AMD Ryzen 9 7950X, 32GB DDR5, Liquid cooling, Tempered glass',
-                'features_vietnamese': 'RTX 4090, AMD Ryzen 9 7950X, RAM DDR5 32GB, Tản nhiệt nước, Kính cường lực'
-            },
-            {
-                'name': 'RTX 4090 Content Creator Studio',
-                'name_vietnamese': 'Studio Sáng tạo Nội dung RTX 4090',
-                'description': 'Professional content creation setup with RTX 4090 for video editing, 3D rendering, and streaming',
-                'description_vietnamese': 'Thiết lập sáng tạo nội dung chuyên nghiệp với RTX 4090 cho chỉnh sửa video, render 3D và streaming',
-                'category': 'Creator PCs',
-                'category_vietnamese': 'PC Sáng tạo',
-                'price': 4499.99,
-                'features': 'RTX 4090, Intel i9-13900K, 64GB RAM, NVENC encoding, Studio drivers',
-                'features_vietnamese': 'RTX 4090, Intel i9-13900K, RAM 64GB, mã hóa NVENC, driver Studio'
-            },
-            {
-                'name': 'RTX 4090 VR Gaming Rig',
-                'name_vietnamese': 'Máy Gaming VR RTX 4090',
-                'description': 'VR-optimized gaming system with RTX 4090, designed for immersive virtual reality experiences',
-                'description_vietnamese': 'Hệ thống gaming tối ưu VR với RTX 4090, được thiết kế cho trải nghiệm thực tế ảo tuyệt vời',
-                'category': 'VR Systems',
-                'category_vietnamese': 'Hệ thống VR',
-                'price': 3799.99,
-                'features': 'RTX 4090, VR Ready, Low latency, 120fps+ VR gaming, motion controllers',
-                'features_vietnamese': 'RTX 4090, Sẵn sàng VR, Độ trễ thấp, Gaming VR 120fps+, điều khiển chuyển động'
-            }
-        ]
-        
-        try:
-            cursor = self.conn.cursor()
-            for product in sample_products:
-                try:
-                    english_text = f"{product['name']} {product['description']} {product.get('features', '')}"
-                    vietnamese_text = f"{product['name_vietnamese']} {product['description_vietnamese']} {product.get('features_vietnamese', '')}"
-                    combined_text = f"{english_text} {vietnamese_text}"
-                    
-                    embedding_blob = None
-                    if self.embedding_model:
-                        try:
-                            embedding = self.embedding_model.encode([combined_text])[0]
-                            embedding_blob = embedding.astype(np.float32).tobytes()
-                        except Exception as e:
-                            self.logger.warning(f"RTX 4090 embedding generation error for {product['name']}: {e}")
-                    
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO products 
-                        (name, name_vietnamese, description, description_vietnamese, 
-                         category, category_vietnamese, price, features, features_vietnamese,
-                         embedding, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        product['name'], product['name_vietnamese'],
-                        product['description'], product['description_vietnamese'],
-                        product['category'], product['category_vietnamese'],
-                        product['price'], product.get('features', ''), product.get('features_vietnamese', ''),
-                        embedding_blob,
-                        datetime.now().isoformat()
-                    ))
-                except Exception as e:
-                    self.logger.error(f"Error inserting RTX 4090 product {product.get('name', 'unknown')}: {e}")
-                    continue
-            
-            self.conn.commit()
-            print("✅ RTX 4090 optimized sample products added successfully")
-            
-        except Exception as e:
-            self.logger.error(f"Error adding RTX 4090 sample products: {e}")
-    
+                
     def view_products(self):
         """View products in database with RTX 4090 optimization info"""
         try:
@@ -3071,14 +3744,17 @@ class VietnameseAISalesBot:
             messagebox.showerror("Error", f"Error viewing RTX 4090 conversation history: {e}")
     
     def run(self):
-        """Start the RTX 4090 optimized application"""
+        """Start the application with comprehensive error handling"""
         try:
-            print("📦 Adding RTX 4090 optimized sample products...")
+            print("📦 Adding sample products...")
             self.add_sample_products()
+            
+            print("📋 Loading existing products to tabs...")
+            self.load_existing_products_to_tabs()
             
             self.display_welcome_message()
             
-            print("🚀 Starting RTX 4090 optimized GUI...")
+            print("🚀 Starting GUI...")
             self.root.mainloop()
             
         except Exception as e:
@@ -3093,69 +3769,180 @@ class VietnameseAISalesBot:
             if self.current_language == 'vi':
                 welcome_msg = f"""🤖 Chào mừng đến với Trợ lý AI Bán hàng {rtx_status}!
 
-Trạng thái hệ thống:
-✅ Hỗ trợ tiếng Việt và tiếng Anh
-{rtx_status} {'RTX 4090 với 24GB VRAM' if hasattr(self, 'is_rtx4090') and self.is_rtx4090 else 'GPU tiêu chuẩn'}
-{'✅' if self.text_generator else '❌'} Mô hình AI: {'RTX 4090 Optimized' if self.text_generator else 'Không khả dụng'}
-{'✅' if self.embedding_model else '❌'} Tìm kiếm thông minh: {'Batch Processing RTX 4090' if self.embedding_model else 'Không khả dụng'}
+            Trạng thái hệ thống:
+            ✅ Hỗ trợ tiếng Việt và tiếng Anh
+            {rtx_status} {'RTX 4090 với 24GB VRAM' if hasattr(self, 'is_rtx4090') and self.is_rtx4090 else 'GPU tiêu chuẩn'}
+            {'✅' if self.text_generator else '❌'} Mô hình AI: {'RTX 4090 Optimized' if self.text_generator else 'Không khả dụng'}
+            {'✅' if self.embedding_model else '❌'} Tìm kiếm thông minh: {'Batch Processing RTX 4090' if self.embedding_model else 'Không khả dụng'}
 
-Tính năng RTX 4090:
-📦 Tìm kiếm sản phẩm siêu nhanh với batch processing
-💬 Ngữ cảnh cuộc trò chuyện được tối ưu
-🌐 Hỗ trợ đa ngôn ngữ với AI mạnh mẽ
-📚 Xử lý file hàng loạt với RTX 4090
-🖼️ OCR tốc độ cao
-🚀 Response caching cho hiệu suất tối đa
+            Tính năng RTX 4090:
+            📦 Tìm kiếm sản phẩm siêu nhanh với batch processing
+            💬 Ngữ cảnh cuộc trò chuyện được tối ưu
+            🌐 Hỗ trợ đa ngôn ngữ với AI mạnh mẽ
+            📚 Xử lý file hàng loạt với RTX 4090
+            🖼️ OCR tốc độ cao
+            🚀 Response caching cho hiệu suất tối đa
 
-Hãy thử đặt câu hỏi như:
-• "Tôi muốn RTX 4090 cho AI development"
-• "Bạn có máy trạm RTX 4090 nào không?"
-• "So sánh các hệ thống RTX 4090"
-• "Giá RTX 4090 gaming rig là bao nhiêu?"
+            Hãy thử đặt câu hỏi như:
+            • "Tôi muốn RTX 4090 cho AI development"
+            • "Bạn có máy trạm RTX 4090 nào không?"
+            • "So sánh các hệ thống RTX 4090"
+            • "Giá RTX 4090 gaming rig là bao nhiêu?"
 
-📝 Sử dụng bàn phím để nhập tin nhắn
-{f'🔧 Một số tính năng AI có thể bị hạn chế do lỗi tải mô hình' if not self.text_generator else '✅ Tất cả tính năng RTX 4090 hoạt động hoàn hảo'}"""
+            📝 Sử dụng bàn phím để nhập tin nhắn
+            {f'🔧 Một số tính năng AI có thể bị hạn chế do lỗi tải mô hình' if not self.text_generator else '✅ Tất cả tính năng RTX 4090 hoạt động hoàn hảo'}"""
             else:
                 welcome_msg = f"""🤖 Welcome to the {rtx_status} AI Sales Assistant!
 
-System Status:
-✅ Vietnamese and English support
-{rtx_status} {'RTX 4090 with 24GB VRAM' if hasattr(self, 'is_rtx4090') and self.is_rtx4090 else 'Standard GPU'}
-{'✅' if self.text_generator else '❌'} AI Model: {'RTX 4090 Optimized' if self.text_generator else 'Not available'}
-{'✅' if self.embedding_model else '❌'} Smart Search: {'Batch Processing RTX 4090' if self.embedding_model else 'Not available'}
+            System Status:
+            ✅ Vietnamese and English support
+            {rtx_status} {'RTX 4090 with 24GB VRAM' if hasattr(self, 'is_rtx4090') and self.is_rtx4090 else 'Standard GPU'}
+            {'✅' if self.text_generator else '❌'} AI Model: {'RTX 4090 Optimized' if self.text_generator else 'Not available'}
+            {'✅' if self.embedding_model else '❌'} Smart Search: {'Batch Processing RTX 4090' if self.embedding_model else 'Not available'}
 
-RTX 4090 Features:
-📦 Ultra-fast product search with batch processing
-💬 Optimized conversation context
-🌐 Multi-language support with powerful AI
-📚 Batch file processing with RTX 4090
-🖼️ High-speed OCR
-🚀 Response caching for maximum performance
+            RTX 4090 Features:
+            📦 Ultra-fast product search with batch processing
+            💬 Optimized conversation context
+            🌐 Multi-language support with powerful AI
+            📚 Batch file processing with RTX 4090
+            🖼️ High-speed OCR
+            🚀 Response caching for maximum performance
 
-Try asking questions like:
-• "I need RTX 4090 for AI development"
-• "What RTX 4090 workstations do you have?"
-• "Compare RTX 4090 systems"
-• "How much does RTX 4090 gaming rig cost?"
+            Try asking questions like:
+            • "I need RTX 4090 for AI development"
+            • "What RTX 4090 workstations do you have?"
+            • "Compare RTX 4090 systems"
+            • "How much does RTX 4090 gaming rig cost?"
 
-📝 Use keyboard to type messages
-{f'🔧 Some AI features may be limited due to model loading errors' if not self.text_generator else '✅ All RTX 4090 features working perfectly'}"""
+            📝 Use keyboard to type messages
+            {f'🔧 Some AI features may be limited due to model loading errors' if not self.text_generator else '✅ All RTX 4090 features working perfectly'}"""
 
             self.display_message("RTX 4090 System", welcome_msg, "system")
         except Exception as e:
             print(f"Welcome message error: {e}")
+            
+    def add_sample_products(self):
+        """Add sample SSD, Memory, and Motherboard products from Excel template"""
+        sample_products = [
+            # SSD Products - matching Database tab fields exactly
+            {
+                'product': 'SSD (SOLID STATE DRIVE)',     # Sản phẩm
+                'interface': 'M2 NVMe',                   # Giao thức
+                'model': 'E130 256GB',                    # Model
+                'specifications': '3200M/s Read 2700MB Write',  # Thông số
+                'stock_status': 'Còn hàng',               # Kho
+                'price': '600000',                        # Giá bán lẻ
+                'category': 'SSD'
+            },
+            {
+                'product': 'SSD (SOLID STATE DRIVE)',
+                'interface': 'M2 NVME',
+                'model': 'E130 512GB',
+                'specifications': 'Speed 3500M/s Read 3200MB Write',
+                'stock_status': 'Còn hàng',
+                'price': '900000',
+                'category': 'SSD'
+            },
+            # Memory Products - matching Database tab fields
+            {
+                'product': 'Desktop Memory',
+                'interface': 'DDR4 UDIMM',
+                'model': 'U3200I-C22 16GB',
+                'specifications': '3200Mhz 1.2V (Jedec), CAS Latency 22 chỉ tương thích với CPU Intel',
+                'stock_status': 'còn hàng',
+                'price': '600000',
+                'category': 'Memory'
+            },
+            {
+                'product': 'Laptop Memory',
+                'interface': 'DDR4 SODIM',
+                'model': 'S3200I-C22 8GB',
+                'specifications': '3200Mhz 1.2V (Jedec) CAS Latency 22 chỉ tương thích với CPU Intel',
+                'stock_status': 'Còn hàng',
+                'price': '400000',
+                'category': 'Memory'
+            },
+            {
+                'product': 'Desktop Memory',
+                'interface': 'DDR5 UDIMM',
+                'model': 'U5600-C46 16GB',
+                'specifications': '5600Mh 1.1V (Jedec) CAS Latency 46 tương thích với CPU Intel và AMD',
+                'stock_status': 'còn hàng',
+                'price': '1300000',
+                'category': 'Memory'
+            },
+            # Motherboard Products - note: uses 'chipset' instead of 'interface'
+            {
+                'product': 'Intel Motherboard',
+                'chipset': 'H610',                # Note: Motherboard uses 'chipset' not 'interface'
+                'model': 'H610M-HDV',
+                'specifications': 'Hỗ trợ CPU Intel thế hệ 12 13 14, sử dụng DDR4 cổng xuất hình: HDMI, Display Port, VGA. 2 USB 3.2, 2 USB 2.0',
+                'stock_status': 'Còn hàng',
+                'price': '1650000',
+                'category': 'Motherboard'
+            },
+            {
+                'product': 'Intel Motherboard',
+                'chipset': 'B760',
+                'model': 'B760M-HDV',
+                'specifications': 'Hỗ trợ CPU Intel thế hệ 12 13 14, sử dụng DDR4 cổng xuất hình: HDMI, Display Port, VGA. 4 USB 3.2, 2 USB 2.0, Có đèn led chẩn đoán lỗi.',
+                'stock_status': 'Còn hàng',
+                'price': '1890000',
+                'category': 'Motherboard'
+            }
+        ]
         
-    def __del__(self):
-        """Cleanup with RTX 4090 optimization"""
         try:
-            if hasattr(self, 'conn'):
-                self.conn.close()
-            if hasattr(self, 'response_cache'):
-                self.response_cache.clear()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except:
-            pass
+            cursor = self.conn.cursor()
+            for product in sample_products:
+                try:
+                    # Build text for embedding - using exact fields
+                    combined_text = f"{product.get('product', '')} {product.get('model', '')} {product.get('specifications', '')}"
+                    
+                    embedding_blob = None
+                    if self.embedding_model:
+                        try:
+                            embedding = self.embedding_model.encode([combined_text])[0]
+                            embedding_blob = embedding.astype(np.float32).tobytes()
+                        except Exception as e:
+                            self.logger.warning(f"Embedding generation error for {product.get('model', '')}: {e}")
+                    
+                    # Parse price
+                    try:
+                        price_num = float(str(product.get('price', '0')).replace(',', '').replace(' ', ''))
+                    except:
+                        price_num = 0
+                    
+                    # Insert using the same structure as add_product method
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO products 
+                        (name, description, category, price, features, specifications, availability,
+                         source_file, embedding, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        product.get('model', ''),      # model -> name
+                        product.get('product', ''),    # product -> description
+                        product.get('category', ''),
+                        price_num,
+                        product.get('interface', product.get('chipset', '')),  # interface/chipset -> features
+                        product.get('specifications', ''),
+                        product.get('stock_status', 'Available'),
+                        'Sample Data',
+                        embedding_blob,
+                        datetime.now().isoformat()
+                    ))
+                    
+                except Exception as e:
+                    self.logger.error(f"Error inserting sample product {product.get('model', 'unknown')}: {e}")
+                    continue
+            
+            self.conn.commit()
+            print("✅ Sample products added successfully with exact Database tab field structure")
+            
+        except Exception as e:
+            self.logger.error(f"Error adding sample products: {e}")
+            print(f"❌ Error adding sample products: {e}")  
+    
     # ADD THESE 4 NEW METHODS HERE:
     def get_vietnamese_addressing(self, age, gender):
         """Determine Vietnamese addressing based on age and gender"""
@@ -3287,7 +4074,419 @@ Try asking questions like:
                 'processing_time': 0.1,
                 'user_language': 'vi',
                 'response_language': 'vi'
-            }
+            }  
+    def check_database_contents(self):
+        """Check what's actually in the database"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Check if products table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='products'")
+            if not cursor.fetchone():
+                print("❌ Products table doesn't exist!")
+                return
+                
+            # Get all products
+            cursor.execute("SELECT * FROM products")
+            products = cursor.fetchall()
+            print(f"\n📊 Total products in database: {len(products)}")
+            
+            # Show column names
+            cursor.execute("PRAGMA table_info(products)")
+            columns = cursor.fetchall()
+            print("\nDatabase columns:")
+            for col in columns:
+                print(f"  - {col[1]} ({col[2]})")
+            
+            # Show products by category
+            cursor.execute("SELECT category, COUNT(*) FROM products GROUP BY category")
+            categories = cursor.fetchall()
+            print("\nProducts by category:")
+            for cat, count in categories:
+                print(f"  - {cat}: {count} products")
+                
+            # Show first 5 products
+            cursor.execute("SELECT name, category, created_at FROM products LIMIT 5")
+            sample = cursor.fetchall()
+            print("\nFirst 5 products:")
+            for name, cat, created in sample:
+                print(f"  - {name} ({cat}) - Created: {created}")
+                
+        except Exception as e:
+            print(f"❌ Error checking database: {e}")
+        
+    def __del__(self):
+        """Cleanup with RTX 4090 optimization"""
+        try:
+            if hasattr(self, 'conn'):
+                self.conn.close()
+            if hasattr(self, 'response_cache'):
+                self.response_cache.clear()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except:
+            pass
+            
+    def view_database_contents(self, category=None):
+        """View products in the SQLite database, optionally filtered by category"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Auto-detect category from current tab if not specified
+            if not category:
+                try:
+                    current_tab_index = self.db_sub_notebook.index('current')
+                    current_tab_text = self.db_sub_notebook.tab(current_tab_index, 'text')
+                    
+                    # Extract category from tab text
+                    if 'SSD' in current_tab_text:
+                        category = 'SSD'
+                    elif 'Memory' in current_tab_text:
+                        category = 'Memory'
+                    elif 'Motherboard' in current_tab_text:
+                        category = 'Motherboard'
+                    else:
+                        print(f"Unknown tab: {current_tab_text}")
+                        return
+                except Exception as e:
+                    print(f"Error detecting current tab: {e}")
+                    return
+            
+            # Query products for the specific category
+            cursor.execute("""
+                SELECT id, name, description, category, category_vietnamese, 
+                       price, features, specifications, availability, 
+                       source_file, created_at
+                FROM products 
+                WHERE category = ? 
+                ORDER BY created_at DESC
+            """, (category,))
+            products = cursor.fetchall()
+            
+            print(f"\n=== {category} Products in Database ===")
+            print(f"Total {category} products: {len(products)}")
+            
+            # Update the appropriate TreeView based on category
+            if category == 'SSD' and hasattr(self, 'ssd_tree'):
+                self.populate_tree_from_database(self.ssd_tree, products, category)
+                
+            elif category == 'Memory' and hasattr(self, 'memory_tree'):
+                self.populate_tree_from_database(self.memory_tree, products, category)
+                
+            elif category == 'Motherboard' and hasattr(self, 'mb_tree'):
+                self.populate_tree_from_database(self.mb_tree, products, category)
+            
+            # Show success message
+            self.show_message("Success", f"Loaded {len(products)} {category} products from database")
+            
+        except Exception as e:
+            print(f"Error viewing database: {e}")
+            self.show_message("Error", f"Error viewing database: {str(e)}")
+            
+    def populate_tree_from_database(self, tree_widget, products, category):
+        """Helper method to populate a TreeView with products from database"""
+        try:
+            # Clear existing items
+            for item in tree_widget.get_children():
+                tree_widget.delete(item)
+            
+            # Add products to TreeView
+            for i, product in enumerate(products, 1):
+                # Extract values based on database structure
+                # product = (id, name, description, category, category_vietnamese, 
+                #           price, features, specifications, availability, source_file, created_at)
+                
+                stt = i
+                product_name = product[2] or product[1] or 'N/A'  # description or name
+                interface_or_chipset = product[6] or 'N/A'        # features field
+                model = product[1] or 'N/A'                       # name field
+                specifications = product[7] or 'N/A'              # specifications
+                stock_status = product[8] or 'Available'          # availability
+                price = f"{product[5] or 0:,.0f}" if product[5] else "0"
+                
+                # Insert into TreeView
+                tree_widget.insert('', 'end', values=(
+                    stt,
+                    product_name,
+                    interface_or_chipset,
+                    model,
+                    specifications,
+                    stock_status,
+                    price
+                ))
+            
+            print(f"✅ Populated {category} TreeView with {len(products)} products")
+            
+        except Exception as e:
+            print(f"Error populating TreeView: {e}")
+            
+    def remove_selected_item(self):
+        """Remove selected item(s) from current category's TreeView and database"""
+        try:
+            # Determine current category tab
+            current_tab_index = self.db_sub_notebook.index('current')
+            current_tab_text = self.db_sub_notebook.tab(current_tab_index, 'text')
+            
+            # Get the appropriate tree widget
+            tree_widget = None
+            category = None
+            
+            if 'SSD' in current_tab_text:
+                tree_widget = self.ssd_tree
+                category = 'SSD'
+            elif 'Memory' in current_tab_text:
+                tree_widget = self.memory_tree
+                category = 'Memory'
+            elif 'Motherboard' in current_tab_text:
+                tree_widget = self.mb_tree
+                category = 'Motherboard'
+            else:
+                self.show_message("Error", "Unknown product category")
+                return
+            
+            # Get selected items (can be multiple)
+            selected_items = tree_widget.selection()
+            if not selected_items:
+                self.show_message("Warning", "Please select item(s) to remove")
+                return
+            
+            # Collect items to delete
+            items_to_delete = []
+            for item in selected_items:
+                item_values = tree_widget.item(item, 'values')
+                if item_values and len(item_values) >= 4:
+                    items_to_delete.append({
+                        'tree_item': item,
+                        'product': item_values[1],
+                        'model': item_values[3]
+                    })
+            
+            if not items_to_delete:
+                self.show_message("Error", "No valid items selected")
+                return
+            
+            # Confirm deletion
+            item_count = len(items_to_delete)
+            message = f"Are you sure you want to delete {item_count} item(s)?\n\n"
+            if item_count <= 5:
+                for item in items_to_delete:
+                    message += f"• {item['model']} - {item['product']}\n"
+            message += f"\nCategory: {category}\nThis action cannot be undone!"
+            
+            result = messagebox.askyesno("Confirm Deletion", message)
+            
+            if result:
+                # Delete from database
+                cursor = self.conn.cursor()
+                total_deleted = 0
+                
+                for item in items_to_delete:
+                    cursor.execute("""
+                        DELETE FROM products 
+                        WHERE (name = ? OR description = ?) AND category = ?
+                    """, (item['model'], item['product'], category))
+                    total_deleted += cursor.rowcount
+                    
+                    # Remove from TreeView
+                    tree_widget.delete(item['tree_item'])
+                
+                self.conn.commit()
+                
+                if total_deleted > 0:
+                    self.show_message("Success", f"Removed {total_deleted} product(s) successfully")
+                    # Refresh to update row numbers
+                    self.view_database_contents(category)
+                else:
+                    self.show_message("Warning", "No products were removed from database")
+                    
+        except Exception as e:
+            print(f"Error removing items: {e}")
+            self.show_message("Error", f"Error removing items: {str(e)}")  
+            
+class ExcelImportDialog:
+    def __init__(self, parent, database_manager):
+        self.parent = parent
+        self.db_manager = database_manager
+        self.setup_ui()
+        
+    def setup_ui(self):
+        self.dialog = tk.Toplevel(self.parent)
+        self.dialog.title("Import Excel Data")
+        self.dialog.geometry("600x400")
+        self.dialog.transient(self.parent)
+        self.dialog.grab_set()
+        
+        # File selection frame
+        file_frame = ttk.LabelFrame(self.dialog, text="1. Select Excel File")
+        file_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.file_path_var = tk.StringVar()
+        ttk.Entry(file_frame, textvariable=self.file_path_var, 
+                 state='readonly').pack(side='left', fill='x', expand=True, padx=5)
+        ttk.Button(file_frame, text="Browse", 
+                  command=self.browse_file).pack(side='right', padx=5)
+        
+        # Category selection frame
+        category_frame = ttk.LabelFrame(self.dialog, text="2. Select Product Category")
+        category_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.category_var = tk.StringVar(value="SSD")
+        for category in ["SSD", "Memory", "Motherboard"]:
+            ttk.Radiobutton(category_frame, text=category, 
+                           variable=self.category_var, 
+                           value=category).pack(side='left', padx=10)
+        
+        # Progress frame
+        progress_frame = ttk.LabelFrame(self.dialog, text="Import Progress")
+        progress_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.progress_bar = ttk.Progressbar(progress_frame, mode='determinate')
+        self.progress_bar.pack(fill='x', padx=10, pady=10)
+        
+        self.status_label = ttk.Label(progress_frame, text="Ready to import")
+        self.status_label.pack(pady=5)
+        
+        self.details_text = scrolledtext.ScrolledText(progress_frame, height=8, width=60)
+        self.details_text.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Action buttons
+        button_frame = ttk.Frame(self.dialog)
+        button_frame.pack(fill='x', padx=10, pady=10)
+        
+        self.import_btn = ttk.Button(button_frame, text="Import", 
+                                    command=self.start_import)
+        self.import_btn.pack(side='left', padx=5)
+        
+        self.cancel_btn = ttk.Button(button_frame, text="Cancel", 
+                                    command=self.cancel_import)
+        self.cancel_btn.pack(side='left', padx=5)
+        
+        ttk.Button(button_frame, text="Close", 
+                  command=self.dialog.destroy).pack(side='right', padx=5)
+        
+        self.cancel_event = threading.Event()
+        
+    def browse_file(self):
+        filename = filedialog.askopenfilename(
+            title="Select Excel File",
+            filetypes=[
+                ("Excel files", "*.xlsx *.xls *.xlsm"),
+                ("CSV files", "*.csv"),
+                ("All files", "*.*")
+            ]
+        )
+        if filename:
+            self.file_path_var.set(filename)
+            self.validate_file(filename)
+    
+    def validate_file(self, filepath):
+        """Quick validation of Excel file"""
+        try:
+            reader = SmartExcelReader()
+            if filepath.endswith('.csv'):
+                df_sample = pd.read_csv(filepath, nrows=5)
+            else:
+                df_sample = pd.read_excel(filepath, nrows=5)
+            
+            self.details_text.delete(1.0, tk.END)
+            self.details_text.insert(tk.END, f"File: {Path(filepath).name}\n")
+            self.details_text.insert(tk.END, f"Columns found: {', '.join(df_sample.columns)}\n")
+            self.details_text.insert(tk.END, f"Sample rows: {len(df_sample)}\n")
+            
+        except Exception as e:
+            messagebox.showerror("File Error", f"Cannot read file: {str(e)}")
+    
+    def start_import(self):
+        if not self.file_path_var.get():
+            messagebox.showwarning("No File", "Please select a file first")
+            return
+        
+        self.import_btn.config(state='disabled')
+        self.cancel_event.clear()
+        
+        import_thread = threading.Thread(
+            target=self._import_worker,
+            args=(self.file_path_var.get(), self.category_var.get())
+        )
+        import_thread.daemon = True
+        import_thread.start()
+    
+    def _import_worker(self, filepath, category):
+        """Background worker for import process"""
+        try:
+            # Update UI
+            self.dialog.after(0, lambda: self.status_label.config(text="Reading Excel file..."))
+            self.dialog.after(0, lambda: self.progress_bar.config(value=10))
+            
+            # Read Excel file
+            reader = SmartExcelReader()
+            df = reader.read_file_optimized(filepath)
+            total_rows = len(df)
+            
+            if self.cancel_event.is_set():
+                return
+            
+            # Process data
+            self.dialog.after(0, lambda: self.status_label.config(text=f"Processing {total_rows} rows..."))
+            self.dialog.after(0, lambda: self.progress_bar.config(value=30))
+            
+            # Validate and map columns
+            processor = DataProcessor(category)
+            processed_df = processor.process_excel_data(df)
+            
+            if self.cancel_event.is_set():
+                return
+            
+            # Insert into database
+            self.dialog.after(0, lambda: self.status_label.config(text="Inserting into database..."))
+            self.dialog.after(0, lambda: self.progress_bar.config(value=60))
+            
+            result = self.db_manager.bulk_insert_products(category, processed_df)
+            
+            # Update TreeView
+            self.dialog.after(0, lambda: self._update_treeview(category, result))
+            
+            # Complete
+            self.dialog.after(0, lambda: self.progress_bar.config(value=100))
+            self.dialog.after(0, lambda: self._import_complete(result))
+            
+        except Exception as e:
+            self.dialog.after(0, lambda: self._import_error(str(e)))
+    
+    def _update_treeview(self, category, result):
+        """Update the main application's TreeView"""
+        if hasattr(self.db_manager, 'refresh_category_view'):
+            self.db_manager.refresh_category_view(category)
+    
+    def _import_complete(self, result):
+        """Handle successful import completion"""
+        self.import_btn.config(state='normal')
+        self.status_label.config(text="Import completed successfully!")
+        
+        summary = f"\n\nIMPORT SUMMARY:\n"
+        summary += f"Total records: {result.get('total_records', 0)}\n"
+        summary += f"Successfully imported: {result.get('successful', 0)}\n"
+        summary += f"Skipped (duplicates): {result.get('duplicates', 0)}\n"
+        summary += f"Errors: {result.get('errors', 0)}\n"
+        
+        self.details_text.insert(tk.END, summary)
+        
+        messagebox.showinfo("Import Complete", 
+                           f"Successfully imported {result.get('successful', 0)} records!")
+    
+    def _import_error(self, error_message):
+        """Handle import errors"""
+        self.import_btn.config(state='normal')
+        self.status_label.config(text="Import failed!")
+        self.details_text.insert(tk.END, f"\nERROR: {error_message}\n")
+        messagebox.showerror("Import Error", f"Import failed: {error_message}")
+    
+    def cancel_import(self):
+        self.cancel_event.set()
+        self.import_btn.config(state='normal')
+        self.status_label.config(text="Import cancelled")
+ 
+
 # FIXED WEB CHATBOT FUNCTION FOR RTX 4090 OPTIMIZATION
 def create_web_app(chatbot_instance):
     """Create Flask web application optimized for RTX 4090 with FIXED message sending"""
@@ -3301,14 +4500,14 @@ def create_web_app(chatbot_instance):
     @app.route('/')
     def index():
         """Serve the enhanced web interface with RTX 4090 optimization and FIXED chat functionality"""
-        rtx_status = "🚀 RTX 4090 Powered" if hasattr(chatbot_instance, 'is_rtx4090') and chatbot_instance.is_rtx4090 else "📱 Standard GPU"
+        rtx_status = "🚀 SSTC Powered" if hasattr(chatbot_instance, 'is_rtx4090') and chatbot_instance.is_rtx4090 else "📱 Standard GPU"
         
         return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{rtx_status} AI Sales Assistant - Trợ lý AI Bán hàng</title>
+    <title>{rtx_status} Trợ lý bán hàng siêu thông minh </title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -3574,8 +4773,8 @@ def create_web_app(chatbot_instance):
                 <div class="header-title">
                     <div class="ai-icon">🤖</div>
                     <div>
-                        <h2>{rtx_status} AI Sales Assistant</h2>
-                        <p style="font-size: 14px; opacity: 0.9;">Trợ lý AI Bán hàng tối ưu RTX 4090</p>
+                        <h2>{rtx_status} SSTC Super Sales Consultant</h2>
+                        <p style="font-size: 14px; opacity: 0.9;">Siêu trợ lý SSTC</p>
                     </div>
                 </div>
                 <select class="language-selector" id="languageSelector">
@@ -3604,19 +4803,19 @@ def create_web_app(chatbot_instance):
         <div class="avatar-panel">
             <div class="avatar-container" id="avatarContainer">
                 <div class="status-indicator"></div>
-                🎨 Generating RTX 4090 Optimized AI Assistant Photo...
+                🎨 Generating SSTC Super Sales Consultant Photo...
             </div>
             <div class="controls">
                 <button class="btn" onclick="generateFullBodyPhoto()">🔄 New Photo</button>
                 <button class="btn" onclick="generateDifferentStyle()">✨ New Style</button>
             </div>
             <div class="info-panel">
-                <div class="assistant-name">🌟 {rtx_status} AI Assistant</div>
+                <div class="assistant-name">🌟 {rtx_status} Sales Consultant</div>
                 <div class="assistant-subtitle">
                     Professional AI Sales Consultant
-                    <span class="rtx-badge">RTX 4090</span>
+                    <span class="rtx-badge">SSTC</span>
                 </div>
-                <small style="color: #666;">Ultra-fast processing with 24GB VRAM</small>
+                <small style="color: #666;">Siêu đẹp, siêu nhanh và siêu chuẩn</small>
             </div>
         </div>
     </div>
@@ -3627,7 +4826,7 @@ def create_web_app(chatbot_instance):
 
         function generateFullBodyPhoto() {{
             const container = document.getElementById('avatarContainer');
-            container.innerHTML = '<div class="status-indicator"></div>🚀 Generating RTX 4090 AI Assistant Photo...';
+            container.innerHTML = '<div class="status-indicator"></div>🚀 Generating SSTC Super Sales Consultant Photo...';
             
             const randomSeed = Math.floor(Math.random() * 50000);
             const imageUrl = 'https://image.pollinations.ai/prompt/full%20body%20portrait%20professional%20businesswoman%20AI%20consultant?width=450&height=700&seed=' + randomSeed;
@@ -3651,12 +4850,12 @@ def create_web_app(chatbot_instance):
             img.onload = function() {{
                 container.innerHTML = '<div class="status-indicator"></div>';
                 container.appendChild(img);
-                console.log('✅ RTX 4090 AI assistant photo generated successfully');
+                console.log('✅ SSTC Super Sales Consultant photo generated successfully');
             }};
             
             img.onerror = function() {{
                 console.log('❌ Image failed, trying backup...');
-                container.innerHTML = '<div class="status-indicator"></div>👩‍💼 RTX 4090 AI Assistant<br><small>Click "New Photo" to try again</small>';
+                container.innerHTML = '<div class="status-indicator"></div> SSTC Super Sales Consultant<br><small>Click "New Photo" to try again</small>';
             }};
             
             img.src = imageUrl;
@@ -3870,10 +5069,43 @@ def create_web_app(chatbot_instance):
 
 
 def main():
+    import os
+    print(f"🏃 Running from: {os.getcwd()}")
+    print(f"📄 Script location: {os.path.abspath(__file__)}")
+    
+    # List all .db files in current and parent directories
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if file.endswith('.db'):
+                full_path = os.path.join(root, file)
+                mod_time = datetime.fromtimestamp(os.path.getmtime(full_path))
+                size = os.path.getsize(full_path) / 1024  # KB
+                print(f"  Found: {full_path} - {size:.1f}KB - Modified: {mod_time}")
+        # Add this temporary code to your main() function
+    import shutil
+    import os
+
+    # Find the active database with 248 products
+    active_db = None
+    for path in ['chatbot_data.db', '../chatbot_data.db', 'venv/chatbot_data.db']:
+        if os.path.exists(path):
+            conn = sqlite3.connect(path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM products")
+            count = cursor.fetchone()[0]
+            conn.close()
+            if count == 248:
+                active_db = path
+                break
+
+    if active_db and active_db != 'chatbot_data.db':
+        print(f"📋 Copying active database from {active_db} to main folder")
+        shutil.copy2(active_db, 'chatbot_data.db')
+    
     """Main function that starts both RTX 4090 optimized desktop and web interfaces"""
     print("""
     ===============================================
-    🚀 RTX 4090 Optimized Vietnamese AI Sales ChatBot
+    🚀 SSTC AI SUPER SALES
     ===============================================
     
     🔧 RTX 4090 Features:
@@ -3903,10 +5135,30 @@ def main():
         # Initialize with RTX 4090 optimizations
         chatbot = VietnameseAISalesBot(start_gui=False)
         print("✅ RTX 4090 optimized AI models loaded successfully!")
+        # Check database contents right after initialization
+        print("\n=== Checking Database Contents ===")
+        chatbot.check_database_contents()
+        
+        # Add sample products
+        chatbot.add_sample_products()
+        
+        # Check again after adding samples
+        print("\n=== After Adding Sample Products ===")
+        chatbot.check_database_contents()
         
         # Add RTX 4090 sample products
         print("📦 Adding RTX 4090 sample products...")
         chatbot.add_sample_products()
+        # DEBUG CODE for add_sample_products()
+        cursor = chatbot.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM products")
+        count = cursor.fetchone()[0]
+        print(f"📊 Total products in database: {count}")
+        
+        cursor.execute("SELECT name, category FROM products LIMIT 5")
+        products = cursor.fetchall()
+        for p in products:
+            print(f"  - {p[0]} ({p[1]})")
         
         # Start web interface in background thread
         def start_web_interface():
