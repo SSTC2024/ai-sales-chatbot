@@ -374,7 +374,94 @@ class VietnameseAISalesBot:
     RTX 4090 Optimized AI Sales ChatBot with Vietnamese language support
     Enhanced for maximum performance with high-end GPU
     """
-    
+    def load_products_from_json(self, json_path):
+        """Load products from JSON file into database"""
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            products = data.get('products', [])
+            cursor = self.conn.cursor()
+            added_count = 0
+            
+            for product in products:
+                try:
+                    # Extract all fields from JSON
+                    name = product.get('name', '')
+                    description = product.get('description', '')
+                    category = product.get('category', '')
+                    subcategory = product.get('subcategory', '')
+                    price = product.get('price', 0)
+                    features = ', '.join(product.get('features', []))
+                    specifications = json.dumps(product.get('specifications', {}))
+                    availability = product.get('availability', 'in_stock')
+                    stock_count = product.get('stock_count', 0)
+                    brand = product.get('brand', '')
+                    model = product.get('model', '')
+                    warranty = product.get('warranty', '')
+                    image_urls = json.dumps(product.get('image_urls', []))
+                    tags = json.dumps(product.get('tags', []))
+                    rating = product.get('rating', 0.0)
+                    review_count = product.get('review_count', 0)
+                    
+                    # Generate embedding
+                    embedding_blob = None
+                    if self.embedding_model and (name or description):
+                        text_for_embedding = f"{name} {description} {features} {category} {brand}"
+                        try:
+                            embedding = self.embedding_model.encode([text_for_embedding])[0]
+                            embedding_blob = embedding.astype(np.float32).tobytes()
+                        except Exception as e:
+                            print(f"⚠️ Embedding generation failed for {name}: {e}")
+                    
+                    # Insert into database with Vietnamese fields empty (can be added later)
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO products 
+                        (name, name_vietnamese, description, description_vietnamese, 
+                         category, category_vietnamese, price, features, features_vietnamese,
+                         specifications, specifications_vietnamese, availability, availability_vietnamese,
+                         source_file, embedding, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        name,
+                        '',  # name_vietnamese - empty for now
+                        description,
+                        '',  # description_vietnamese - empty for now
+                        category,
+                        '',  # category_vietnamese - empty for now
+                        price,
+                        features,
+                        '',  # features_vietnamese - empty for now
+                        specifications,
+                        '',  # specifications_vietnamese - empty for now
+                        availability,
+                        '',  # availability_vietnamese - empty for now
+                        json_path,
+                        embedding_blob,
+                        datetime.now().isoformat(),
+                        datetime.now().isoformat()
+                    ))
+                    
+                    added_count += 1
+                    print(f"✅ Added product: {name}")
+                    
+                except Exception as e:
+                    print(f"⚠️ Error adding product {product.get('name', 'unknown')}: {e}")
+                    continue
+            
+            self.conn.commit()
+            print(f"✅ Successfully loaded {added_count} products from JSON")
+            return added_count
+            
+        except FileNotFoundError:
+            print(f"❌ File not found: {json_path}")
+            return 0
+        except json.JSONDecodeError as e:
+            print(f"❌ Invalid JSON format: {e}")
+            return 0
+        except Exception as e:
+            print(f"❌ Error loading products from JSON: {e}")
+            return 0
     def __init__(self, start_gui=False):
         self.load_config()
         self.setup_logging()
@@ -2276,220 +2363,139 @@ class VietnameseAISalesBot:
         # Include all your existing file processing methods
         
     def process_excel_file(self, file_path):
-        """Process Excel files with dynamic column mapping"""
+        """Process Excel files for product data with Vietnamese support"""
         try:
-            # ADD THESE NEW LINES
-            # Auto-detect category from filename or content
-            category = self.detect_category_from_file(file_path)
-            processor = DataProcessor(category)
-            
             if file_path.endswith('.csv'):
                 df = pd.read_csv(file_path, encoding='utf-8')
             else:
                 df = pd.read_excel(file_path)
                 
-            self.update_training_status(f"📊 Found {len(df)} rows in Excel file (Category: {category})")
+            self.update_training_status(f"📊 Found {len(df)} rows in Excel file")
+            self.update_training_status(f"Columns: {', '.join(df.columns.tolist())}")
             
-            # Process with dynamic mapping
-            processed_df = processor.process_excel_data(df)
+            # Updated column mapping for your specific Excel structure
+            column_mapping = {
+                'name': ['Sản phẩm', 'name', 'tên', 'ten', 'product_name'],
+                'protocol': ['Giao thức', 'protocol', 'giao_thuc'],
+                'model': ['Model', 'model'],
+                'capacity': ['Capacity', 'capacity', 'dung_luong', 'dung lượng'],
+                'specifications': ['Thông số', 'specifications', 'thong_so', 'specs'],
+                'stock_status': ['Kho', 'stock', 'inventory', 'tồn kho'],
+                'price': ['Giá bán lẻ', 'price', 'giá', 'gia', 'cost'],
+            }
             
-            # REMOVE the old column_mapping dictionary completely
-            # DELETE these lines:
-            # column_mapping = {
-            #     'name': ['name', 'tên', 'ten', 'product_name', 'sản phẩm'],
-            #     ... all the mapping lines ...
-            # }
+            # Map columns
+            mapped_columns = {}
+            for standard_col, possible_cols in column_mapping.items():
+                for col in possible_cols:
+                    if col in df.columns:
+                        mapped_columns[standard_col] = col
+                        break
             
-            # No need for manual mapping - processor already did it
-            # Just validate that we have data
-            if len(processed_df) == 0:
-                raise ValueError("No valid data found after processing")
+            self.update_training_status(f"Mapped columns: {mapped_columns}")
+            
+            if 'name' not in mapped_columns:
+                raise ValueError("Excel file must contain at least a product name column")
                 
             cursor = self.conn.cursor()
             added_count = 0
             
-            # RTX 4090 optimization: Process in batches
-            batch_size = 50 if hasattr(self, 'is_rtx4090') and self.is_rtx4090 else 25
-            
-            for batch_start in range(0, len(processed_df), batch_size):
-                batch_end = min(batch_start + batch_size, len(processed_df))
-                batch_df = processed_df.iloc[batch_start:batch_end]
-                
-                batch_texts = []
-                batch_products = []
-                
-            for _, row in batch_df.iterrows():
+            for _, row in df.iterrows():
                 try:
-                    # Extract fields using processed data (already mapped by processor)
-                    name = str(row.get('name', ''))
-                    name_vietnamese = str(row.get('name_vietnamese', ''))
-                    description = str(row.get('description', ''))
-                    description_vietnamese = str(row.get('description_vietnamese', ''))
-                    category = row.get('category', category)  # Use detected category if not in row
-                    category_vietnamese = str(row.get('category_vietnamese', ''))
-                    features = str(row.get('features', ''))
-                    features_vietnamese = str(row.get('features_vietnamese', ''))
-                    specifications = str(row.get('specifications', ''))
-                    specifications_vietnamese = str(row.get('specifications_vietnamese', ''))
+                    # Extract values with proper mapping
+                    name = str(row.get(mapped_columns.get('name', ''), ''))
+                    protocol = str(row.get(mapped_columns.get('protocol', ''), ''))
+                    model = str(row.get(mapped_columns.get('model', ''), ''))
+                    capacity = str(row.get(mapped_columns.get('capacity', ''), ''))
+                    specifications = str(row.get(mapped_columns.get('specifications', ''), ''))
+                    stock_status = str(row.get(mapped_columns.get('stock_status', ''), 'in_stock'))
                     
-                    # Handle price
+                    # Build description from multiple fields
+                    description_parts = []
+                    if protocol:
+                        description_parts.append(f"Protocol: {protocol}")
+                    if model:
+                        description_parts.append(f"Model: {model}")
+                    if capacity:
+                        description_parts.append(f"Capacity: {capacity}")
+                    
+                    description = " | ".join(description_parts) if description_parts else "SSD Product"
+                    
+                    # Determine category based on product name
+                    category = "SSD"
+                    if "SOLID STATE DRIVE" in name.upper() or "SSD" in name.upper():
+                        category = "SSD"
+                    
+                    # Parse price
                     price = 0
-                    if 'price' in row:
+                    if 'price' in mapped_columns:
                         try:
-                            price_val = row.get('price', 0)
+                            price_val = row.get(mapped_columns['price'], 0)
                             if pd.notna(price_val):
-                                price = float(str(price_val).replace(',', '').replace('$', ''))
+                                # Remove commas and convert to float
+                                price_str = str(price_val).replace(',', '').replace('$', '')
+                                price = float(price_str)
                         except (ValueError, TypeError):
                             price = 0
                     
-                    # ADD NEW FIELDS from enhanced schema
-                    sku = str(row.get('sku', f"{category}_{int(time.time())}_{added_count}"))
-                    subcategory = str(row.get('subcategory', ''))
-                    stock_count = int(row.get('stock_count', 0)) if row.get('stock_count') else 0
-                    brand = str(row.get('brand', ''))
-                    model = str(row.get('model', name))  # Use name as model if not specified
-                    warranty = str(row.get('warranty', ''))
-                    availability = str(row.get('availability', 'in_stock'))
-                    
-                    # JSON fields
-                    image_urls = json.dumps(row.get('image_urls', [])) if row.get('image_urls') else '[]'
-                    tags = json.dumps(row.get('tags', [])) if row.get('tags') else '[]'
-                    use_cases = json.dumps(row.get('use_cases', [])) if row.get('use_cases') else '[]'
-                    target_audience = json.dumps(row.get('target_audience', [])) if row.get('target_audience') else '[]'
-                    
-                    # Rating and reviews
-                    rating = float(row.get('rating', 0)) if row.get('rating') else 0.0
-                    review_count = int(row.get('review_count', 0)) if row.get('review_count') else 0
-                        
-                    if not name and not name_vietnamese:
+                    if not name:
                         continue
-                            
-                        product_text_en = f"{name} {description} {features} {specifications}"
-                        product_text_vi = f"{name_vietnamese} {description_vietnamese} {features_vietnamese} {specifications_vietnamese}"
-                        combined_text = f"{product_text_en} {product_text_vi}".strip()
-                        
-                        batch_texts.append(combined_text)
-                        batch_products.append({
-                            'name': name or name_vietnamese,
-                            'name_vietnamese': name_vietnamese,
-                            'description': description or description_vietnamese,
-                            'description_vietnamese': description_vietnamese,
-                            'category': category,
-                            'category_vietnamese': category_vietnamese,
-                            'price': price,
-                            'features': features,
-                            'features_vietnamese': features_vietnamese,
-                            'specifications': specifications,
-                            'specifications_vietnamese': specifications_vietnamese,
-                            'source_file': file_path,
-                            'combined_text': combined_text
-                        })
-                        
+                    
+                    # Combine all text for embedding
+                    combined_text = f"{name} {description} {specifications} {capacity}"
+                    
+                    # Generate embedding
+                    embedding_blob = None
+                    if self.embedding_model and combined_text:
+                        try:
+                            embedding = self.embedding_model.encode([combined_text])[0]
+                            embedding_blob = embedding.astype(np.float32).tobytes()
+                        except Exception as e:
+                            self.update_training_status(f"⚠️ Embedding generation failed for {name}: {e}")
+                    
+                    # Store capacity in features field and full specs in specifications field
+                    features = f"Capacity: {capacity}, {protocol}" if capacity else protocol
+                    
+                    # Determine availability based on stock status
+                    availability = 'in_stock' if 'còn hàng' in stock_status.lower() else 'out_of_stock'
+                    
+                    # Insert into database
+                    cursor.execute('''
+                        INSERT INTO products 
+                        (name, name_vietnamese, description, description_vietnamese, 
+                         category, category_vietnamese, price, features, features_vietnamese,
+                         specifications, specifications_vietnamese, availability, availability_vietnamese,
+                         source_file, embedding, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        name,
+                        name,  # Use same name for Vietnamese
+                        description,
+                        description,  # Use same description for Vietnamese
+                        category,
+                        category,
+                        price,
+                        features,
+                        features,
+                        specifications,
+                        specifications,
+                        availability,
+                        stock_status,  # Original Vietnamese stock status
+                        file_path,
+                        embedding_blob,
+                        datetime.now().isoformat()
+                    ))
+                    added_count += 1
+                    
                 except Exception as row_error:
                     self.update_training_status(f"⚠️ Error processing row: {row_error}")
                     continue
                 
-                # RTX 4090 optimized batch embedding generation
-                if self.embedding_model and batch_texts:
-                    try:
-                        embeddings = self.embedding_model.encode(batch_texts, batch_size=batch_size)
-                        
-                        for i, (embedding, product_data) in enumerate(zip(embeddings, batch_products)):
-                            try:
-                                embedding_blob = embedding.astype(np.float32).tobytes()
-                                
-                                cursor.execute('''
-                                    INSERT INTO products 
-                                    (sku, name, name_vietnamese, description, description_vietnamese, 
-                                     category, category_vietnamese, subcategory, price, features, 
-                                     features_vietnamese, specifications, specifications_vietnamese, 
-                                     availability, stock_count, brand, model, warranty, 
-                                     image_urls, tags, rating, review_count, use_cases, 
-                                     target_audience, source_file, embedding, created_at, updated_at)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                ''', (
-                                    product_data['sku'],
-                                    product_data['name'],
-                                    product_data['name_vietnamese'],
-                                    product_data['description'],
-                                    product_data['description_vietnamese'],
-                                    product_data['category'],
-                                    product_data['category_vietnamese'],
-                                    product_data['subcategory'],
-                                    product_data['price'],
-                                    product_data['features'],
-                                    product_data['features_vietnamese'],
-                                    product_data['specifications'],
-                                    product_data['specifications_vietnamese'],
-                                    product_data['availability'],
-                                    product_data['stock_count'],
-                                    product_data['brand'],
-                                    product_data['model'],
-                                    product_data['warranty'],
-                                    product_data['image_urls'],
-                                    product_data['tags'],
-                                    product_data['rating'],
-                                    product_data['review_count'],
-                                    product_data['use_cases'],
-                                    product_data['target_audience'],
-                                    product_data['source_file'],
-                                    embedding_blob,
-                                    datetime.now().isoformat(),
-                                    datetime.now().isoformat()
-                                ))
-                                added_count += 1
-                                
-                            except Exception as insert_error:
-                                self.update_training_status(f"⚠️ Error inserting product: {insert_error}")
-                                continue
-                                
-                    except Exception as batch_error:
-                        self.update_training_status(f"⚠️ Batch embedding error: {batch_error}")
-                        # Fallback to individual processing
-                        for product_data in batch_products:
-                            try:
-                                if product_data['combined_text']:
-                                    embedding = self.embedding_model.encode([product_data['combined_text']])[0]
-                                    embedding_blob = embedding.astype(np.float32).tobytes()
-                                else:
-                                    embedding_blob = None
-                                    
-                                cursor.execute('''
-                                    INSERT INTO products 
-                                    (name, name_vietnamese, description, description_vietnamese, 
-                                     category, category_vietnamese, price, features, features_vietnamese,
-                                     specifications, specifications_vietnamese, source_file, embedding, created_at)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                ''', (
-                                    product_data['name'],
-                                    product_data['name_vietnamese'],
-                                    product_data['description'],
-                                    product_data['description_vietnamese'],
-                                    product_data['category'],
-                                    product_data['category_vietnamese'],
-                                    product_data['price'],
-                                    product_data['features'],
-                                    product_data['features_vietnamese'],
-                                    product_data['specifications'],
-                                    product_data['specifications_vietnamese'],
-                                    product_data['source_file'],
-                                    embedding_blob,
-                                    datetime.now().isoformat()
-                                ))
-                                added_count += 1
-                                
-                            except Exception as fallback_error:
-                                self.update_training_status(f"⚠️ Fallback processing error: {fallback_error}")
-                                continue
-                
-                # Update progress
-                self.update_training_status(f"📦 Processed batch {batch_start//batch_size + 1}: {added_count} products added")
-                
             self.conn.commit()
-            self.update_training_status(f"✅ RTX 4090 optimized processing: Added {added_count} products from Excel file with embeddings")
+            self.update_training_status(f"✅ Added {added_count} products from Excel file")
             
         except Exception as e:
-            raise Exception(f"Error processing Excel file with RTX 4090: {e}")
+            raise Exception(f"Error processing Excel file: {e}")
 
     def process_pdf_file(self, file_path):
         """Process PDF files for knowledge base with Vietnamese support"""
@@ -4968,9 +4974,17 @@ class VietnameseAISalesBot:
     
     def run(self):
         """Start the application with comprehensive error handling"""
-        try:                       
-            print("📋 Loading existing products to tabs...")
-            self.load_existing_products_to_tabs()
+        try:
+            # Load products from JSON instead of hardcoded
+            if os.path.exists('data/products.json'):
+                print("📄 Loading products from JSON template...")
+                count = self.load_products_from_json('data/products.json')
+                if count == 0:
+                    print("⚠️ No products loaded from JSON, falling back to sample products")
+                    self.add_sample_products()
+            else:
+                print("⚠️ No data/products.json found, using sample products")
+                self.add_sample_products()
             
             self.display_welcome_message()
             
@@ -4978,8 +4992,8 @@ class VietnameseAISalesBot:
             self.root.mainloop()
             
         except Exception as e:
-            print(f"❌ Error starting RTX 4090 application: {e}")
-            self.logger.error(f"RTX 4090 application start error: {e}")
+            print(f"❌ Error starting application: {e}")
+            self.logger.error(f"Application start error: {e}")
     
     def display_welcome_message(self):
         """Display welcome message with RTX 4090 system status"""
