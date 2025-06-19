@@ -13,6 +13,10 @@ import logging
 from pathlib import Path
 import re
 import yaml
+import os
+import shutil
+from pathlib import Path
+import hashlib
 # Excel import functionality
 from openpyxl import load_workbook
 from typing import Dict, List, Any
@@ -277,6 +281,94 @@ class DataProcessor:
             df = df[df['product_name'] != 'N/A']
         
         return df
+class DynamicDataManager:
+    """Manages dynamic loading of products and configurations"""
+    
+    def __init__(self, db_connection):
+        self.conn = db_connection
+        self.config_cache = {}
+        
+    def load_products_from_json(self, json_path):
+        """Load products from JSON template format"""
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            products = data.get('products', [])
+            cursor = self.conn.cursor()
+            
+            for product in products:
+                # Extract all fields from JSON template
+                cursor.execute('''
+                    INSERT OR REPLACE INTO products 
+                    (sku, name, description, category, subcategory, price, 
+                     features, specifications, availability, stock_count, 
+                     brand, model, warranty, image_urls, tags, rating, 
+                     review_count, use_cases, target_audience, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    product.get('sku'),
+                    product.get('name'),
+                    product.get('description'),
+                    product.get('category'),
+                    product.get('subcategory'),
+                    product.get('price', 0),
+                    json.dumps(product.get('features', [])),
+                    json.dumps(product.get('specifications', {})),
+                    product.get('availability', 'in_stock'),
+                    product.get('stock_count', 0),
+                    product.get('brand'),
+                    product.get('model'),
+                    product.get('warranty'),
+                    json.dumps(product.get('image_urls', [])),
+                    json.dumps(product.get('tags', [])),
+                    product.get('rating', 0),
+                    product.get('review_count', 0),
+                    json.dumps(product.get('use_cases', [])),
+                    json.dumps(product.get('target_audience', [])),
+                    datetime.now().isoformat()
+                ))
+            
+            self.conn.commit()
+            return len(products)
+            
+        except Exception as e:
+            print(f"Error loading JSON products: {e}")
+            return 0
+    
+    def search_with_filters(self, query, filters=None):
+        """Enhanced search with dynamic filters"""
+        cursor = self.conn.cursor()
+        
+        base_query = """
+            SELECT * FROM products 
+            WHERE 1=1
+        """
+        params = []
+        
+        if filters:
+            if filters.get('category'):
+                base_query += " AND category = ?"
+                params.append(filters['category'])
+            
+            if filters.get('min_price'):
+                base_query += " AND price >= ?"
+                params.append(filters['min_price'])
+                
+            if filters.get('max_price'):
+                base_query += " AND price <= ?"
+                params.append(filters['max_price'])
+                
+            if filters.get('availability'):
+                base_query += " AND availability = ?"
+                params.append(filters['availability'])
+                
+            if filters.get('brand'):
+                base_query += " AND brand = ?"
+                params.append(filters['brand'])
+        
+        cursor.execute(base_query, params)
+        return cursor.fetchall()
 class VietnameseAISalesBot:
     """
     RTX 4090 Optimized AI Sales ChatBot with Vietnamese language support
@@ -315,15 +407,48 @@ class VietnameseAISalesBot:
 
         # Continue with setup_database
         self.setup_database()
+        self.data_manager = DynamicDataManager(self.conn)
     def load_config(self):
         """Load RTX 4090 optimized configuration"""
         try:
             with open('chatbot_config.yaml', 'r', encoding='utf-8') as file:
                 self.config = yaml.safe_load(file)
-            print(f"✅ Configuration loaded: {self.config.get('version', 'unknown')}")
-            
+            print(f"✅ Configuration loaded: {self.config.get('version', 'unknown')}")            
             self.config = self.update_config_for_vietnamese()
-            
+            # Add dynamic config loading
+            self.load_dynamic_configurations()
+        except FileNotFoundError:  # ← ADD THIS
+            print("⚠️ chatbot_config.yaml not found, creating RTX 4090 optimized config")
+            create_config_file()
+            with open('chatbot_config.yaml', 'r', encoding='utf-8') as file:
+                self.config = yaml.safe_load(file)
+        except Exception as e:  # ← ADD THIS
+            print(f"❌ Error loading config: {e}")
+            self.config = self.get_default_rtx4090_config()    
+    # ADD THIS NEW METHOD RIGHT AFTER load_config() method    
+    def load_dynamic_configurations(self):
+        """Load dynamic configurations from templates"""
+        try:
+            # Check for dynamic config files
+            config_dir = os.path.join(os.path.dirname(__file__), 'config')
+            if os.path.exists(config_dir):
+                # Load conversation flows
+                flow_config_path = os.path.join(config_dir, 'flow_examples.yaml')
+                if os.path.exists(flow_config_path):
+                    with open(flow_config_path, 'r', encoding='utf-8') as f:
+                        flow_config = yaml.safe_load(f)
+                        self.config['conversation_flows'].update(flow_config)
+                        print("✅ Loaded dynamic conversation flows")
+                
+                # Load response templates
+                template_path = os.path.join(config_dir, 'response_templates.yaml')
+                if os.path.exists(template_path):
+                    with open(template_path, 'r', encoding='utf-8') as f:
+                        templates = yaml.safe_load(f)
+                        self.config.update(templates)
+                        print("✅ Loaded dynamic response templates")
+        except Exception as e:
+            print(f"⚠️ Dynamic config loading failed: {e}")
         except FileNotFoundError:
             print("⚠️ chatbot_config.yaml not found, creating RTX 4090 optimized config")
             create_config_file()
@@ -483,12 +608,14 @@ class VietnameseAISalesBot:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sku TEXT UNIQUE,  -- ADD THIS
                 name TEXT NOT NULL,
                 name_vietnamese TEXT,
                 description TEXT,
                 description_vietnamese TEXT,
                 category TEXT,
                 category_vietnamese TEXT,
+                subcategory TEXT,  -- ADD THIS
                 price REAL,
                 features TEXT,
                 features_vietnamese TEXT,
@@ -496,13 +623,43 @@ class VietnameseAISalesBot:
                 specifications_vietnamese TEXT,
                 availability TEXT,
                 availability_vietnamese TEXT,
+                stock_count INTEGER DEFAULT 0,  -- ADD THIS
+                brand TEXT,  -- ADD THIS
+                model TEXT,  -- ADD THIS
+                warranty TEXT,  -- ADD THIS
+                image_urls TEXT,  -- ADD THIS (JSON array)
+                tags TEXT,  -- ADD THIS (JSON array)
+                rating REAL DEFAULT 0.0,  -- ADD THIS
+                review_count INTEGER DEFAULT 0,  -- ADD THIS
+                use_cases TEXT,  -- ADD THIS
+                target_audience TEXT,  -- ADD THIS
                 source_file TEXT,
                 embedding BLOB,
                 created_at TEXT,
                 updated_at TEXT
             )
         ''')
-        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                parent_category TEXT,
+                description TEXT,
+                display_order INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS product_variants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER,
+                variant_name TEXT,
+                variant_value TEXT,
+                price_adjustment REAL DEFAULT 0,
+                stock_count INTEGER DEFAULT 0,
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+        ''')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -917,6 +1074,10 @@ class VietnameseAISalesBot:
             # CREATE SESSION ID IF NOT PROVIDED
             if not session_id:
                 session_id = f"web_{int(time.time())}"
+            # ADD DYNAMIC FLOW DETECTION HERE
+            detected_flow = self.detect_conversation_flow(user_input, session_id)
+            if detected_flow:
+                return self.handle_dynamic_flow(detected_flow, user_input)    
             
             # CHECK IF THIS IS A PROFILE SETUP MESSAGE
             if self.is_profile_setup_message(user_input):
@@ -1117,7 +1278,62 @@ class VietnameseAISalesBot:
                 'response_language': error_language,
                 'error': str(e)
             }
-    
+    def detect_conversation_flow(self, user_input, session_id):
+        """Detect which conversation flow to use based on input"""
+        user_input_lower = user_input.lower()
+        
+        # Check all configured flows
+        for flow_name, flow_config in self.config.get('conversation_flows', {}).items():
+            triggers = flow_config.get('triggers', [])
+            if any(trigger.lower() in user_input_lower for trigger in triggers):
+                return {
+                    'name': flow_name,
+                    'config': flow_config,
+                    'matched_trigger': True
+                }
+        
+        # Check conversation stage
+        if session_id in self.conversation_context:
+            last_stage = self.conversation_context[session_id].get('stage')
+            if last_stage:
+                next_stage_config = self.config['conversation_flows'].get(last_stage, {})
+                return {
+                    'name': last_stage,
+                    'config': next_stage_config,
+                    'continuation': True
+                }
+        
+        return None
+
+    def handle_dynamic_flow(self, flow_info, user_input, session_id):
+        """Handle conversation based on dynamic flow configuration"""
+        flow_config = flow_info['config']
+        flow_name = flow_info['name']
+        
+        # Get response template
+        response_template = flow_config.get('response_template', '')
+        
+        # Process dynamic variables
+        if '{product_recommendations}' in response_template:
+            recommendations = self.get_dynamic_recommendations(user_input)
+            response_template = response_template.replace('{product_recommendations}', recommendations)
+        
+        # Set next stage
+        next_stage = flow_config.get('next_stage')
+        if next_stage and session_id:
+            if session_id not in self.conversation_context:
+                self.conversation_context[session_id] = {}
+            self.conversation_context[session_id]['stage'] = next_stage
+        
+        return {
+            'response': response_template,
+            'data_source': f'flow_{flow_name}',
+            'processing_time': time.time() - start_time,
+            'user_language': self.detect_language(user_input),
+            'response_language': self.detect_language(user_input),
+            'flow_used': flow_name
+        }
+        
     def search_local_database_rtx4090(self, user_input, similarity_threshold=None):
         """RTX 4090 optimized database search with batch processing"""
         try:
@@ -1302,7 +1518,11 @@ class VietnameseAISalesBot:
                         return greeting_flow.get('response_template', 'Hello! I am your RTX 4090-powered Sales Consultant!')
             except Exception as e:
                 self.logger.warning(f"Greeting pattern matching error: {e}")
-            
+                
+            response_template = self.select_response_template(user_input, context_data, data_source)
+            if response_template:
+                return self.process_response_template(response_template, context_data, user_language)
+                
             # Generate response based on context
             if context_data and len(context_data) > 0:
                 if data_source == "database":
@@ -1342,7 +1562,86 @@ class VietnameseAISalesBot:
                 return self.config['vietnamese_templates']['error']
             else:
                 return "I apologize, but I'm having trouble generating a response right now."
-    
+                
+    def select_response_template(self, user_input, context_data, data_source):
+        """Select appropriate response template based on context"""
+        templates = self.config.get('response_templates', {})
+        
+        # Check for specific conditions
+        if not context_data or len(context_data) == 0:
+            return templates.get('no_products_found')
+        
+        # Check for out of stock
+        if context_data and all(item.get('availability') == 'out_of_stock' for item in context_data):
+            return templates.get('out_of_stock')
+        
+        # Check for price matching
+        if 'price' in user_input.lower() or 'giá' in user_input.lower():
+            return templates.get('price_match')
+        
+        # Check for bundle opportunities
+        if context_data and len(context_data) > 0:
+            main_product = context_data[0]
+            if main_product.get('category') in ['Laptops', 'Computers']:
+                return templates.get('bundle_offer')
+        
+        return None
+
+    def process_response_template(self, template, context_data, user_language):
+        """Process template with dynamic variables"""
+        if isinstance(template, dict):
+            message = template.get('message', '')
+            fallback_action = template.get('fallback_action')
+        else:
+            message = template
+            fallback_action = None
+        
+        # Replace variables
+        if context_data and len(context_data) > 0:
+            product = context_data[0]
+            message = message.replace('{product_name}', product.get('name', ''))
+            message = message.replace('{price}', str(product.get('price', 0)))
+            message = message.replace('{discount_percentage}', '10')  # Example discount
+            message = message.replace('{discount_amount}', str(product.get('price', 0) * 0.1))
+            
+            # Handle multiple products
+            if '{product_names}' in message:
+                product_names = ', '.join([p.get('name', '') for p in context_data[:3]])
+                message = message.replace('{product_names}', product_names)
+            
+            # Handle accessories
+            if '{accessory_products}' in message:
+                accessories = self.get_accessory_recommendations(product)
+                message = message.replace('{accessory_products}', accessories)
+            
+            # Handle main product reference
+            if '{main_product}' in message:
+                message = message.replace('{main_product}', product.get('name', 'this product'))
+        
+        # Handle language-specific templates
+        if user_language == 'vi' and isinstance(template, dict):
+            vietnamese_message = template.get('message_vietnamese')
+            if vietnamese_message:
+                message = vietnamese_message
+                # Apply same replacements to Vietnamese version
+                if context_data and len(context_data) > 0:
+                    product = context_data[0]
+                    message = message.replace('{product_name}', product.get('name_vietnamese', product.get('name', '')))
+                    # ... apply other replacements
+        
+        return message
+
+    def get_accessory_recommendations(self, main_product):
+        """Get accessory recommendations based on main product"""
+        category = main_product.get('category', '')
+        
+        if category == 'Laptops':
+            return "Wireless Gaming Mouse Elite ($89.99), Mechanical Keyboard Pro ($149.99)"
+        elif category == 'Monitors':
+            return "Monitor Stand ($49.99), HDMI Cable Premium ($29.99)"
+        else:
+            return "compatible accessories"
+            
     def build_product_aware_prompt_rtx4090(self, user_input, products, user_language='vi'):
         """Build RTX 4090 optimized prompt for product responses"""
         try:
@@ -1961,41 +2260,50 @@ class VietnameseAISalesBot:
                 return "Tôi tìm thấy một số thông tin liên quan với RTX 4090. Bạn có thể hỏi cụ thể hơn không?"
             else:
                 return "I found some related information with RTX 4090. Could you be more specific?"
-
-    # Include all your existing file processing methods
+    def detect_category_from_file(self, file_path):
+        """Detect product category from filename or content"""
+        filename = os.path.basename(file_path).lower()
+        
+        if 'ssd' in filename:
+            return 'SSD'
+        elif 'memory' in filename or 'ram' in filename:
+            return 'Memory'
+        elif 'motherboard' in filename or 'mainboard' in filename:
+            return 'Motherboard'
+        
+        # If can't detect from filename, use general
+        return 'General'
+        # Include all your existing file processing methods
+        
     def process_excel_file(self, file_path):
-        """Process Excel files for product data with Vietnamese support and RTX 4090 optimization"""
+        """Process Excel files with dynamic column mapping"""
         try:
+            # ADD THESE NEW LINES
+            # Auto-detect category from filename or content
+            category = self.detect_category_from_file(file_path)
+            processor = DataProcessor(category)
+            
             if file_path.endswith('.csv'):
                 df = pd.read_csv(file_path, encoding='utf-8')
             else:
                 df = pd.read_excel(file_path)
                 
-            self.update_training_status(f"📊 Found {len(df)} rows in Excel file")
-                
-            column_mapping = {
-                'name': ['name', 'tên', 'ten', 'product_name', 'sản phẩm'],
-                'name_vietnamese': ['name_vietnamese', 'tên_tiếng_việt', 'ten_tieng_viet'],
-                'description': ['description', 'mô tả', 'mo_ta', 'desc'],
-                'description_vietnamese': ['description_vietnamese', 'mô_tả_tiếng_việt'],
-                'category': ['category', 'danh mục', 'danh_muc', 'loại'],
-                'category_vietnamese': ['category_vietnamese', 'danh_mục_tiếng_việt'],
-                'price': ['price', 'giá', 'gia', 'cost'],
-                'features': ['features', 'tính năng', 'tinh_nang'],
-                'features_vietnamese': ['features_vietnamese', 'tính_năng_tiếng_việt'],
-                'specifications': ['specifications', 'thông số', 'thong_so', 'specs'],
-                'specifications_vietnamese': ['specifications_vietnamese', 'thông_số_tiếng_việt']
-            }
+            self.update_training_status(f"📊 Found {len(df)} rows in Excel file (Category: {category})")
             
-            mapped_columns = {}
-            for standard_col, possible_cols in column_mapping.items():
-                for col in possible_cols:
-                    if col in df.columns:
-                        mapped_columns[standard_col] = col
-                        break
+            # Process with dynamic mapping
+            processed_df = processor.process_excel_data(df)
             
-            if 'name' not in mapped_columns and 'name_vietnamese' not in mapped_columns:
-                raise ValueError("Excel file must contain at least a name column (English or Vietnamese)")
+            # REMOVE the old column_mapping dictionary completely
+            # DELETE these lines:
+            # column_mapping = {
+            #     'name': ['name', 'tên', 'ten', 'product_name', 'sản phẩm'],
+            #     ... all the mapping lines ...
+            # }
+            
+            # No need for manual mapping - processor already did it
+            # Just validate that we have data
+            if len(processed_df) == 0:
+                raise ValueError("No valid data found after processing")
                 
             cursor = self.conn.cursor()
             added_count = 0
@@ -2003,38 +2311,58 @@ class VietnameseAISalesBot:
             # RTX 4090 optimization: Process in batches
             batch_size = 50 if hasattr(self, 'is_rtx4090') and self.is_rtx4090 else 25
             
-            for batch_start in range(0, len(df), batch_size):
-                batch_end = min(batch_start + batch_size, len(df))
-                batch_df = df.iloc[batch_start:batch_end]
+            for batch_start in range(0, len(processed_df), batch_size):
+                batch_end = min(batch_start + batch_size, len(processed_df))
+                batch_df = processed_df.iloc[batch_start:batch_end]
                 
                 batch_texts = []
                 batch_products = []
                 
-                for _, row in batch_df.iterrows():
-                    try:
-                        name = str(row.get(mapped_columns.get('name', ''), '')) if 'name' in mapped_columns else ''
-                        name_vietnamese = str(row.get(mapped_columns.get('name_vietnamese', ''), '')) if 'name_vietnamese' in mapped_columns else ''
-                        description = str(row.get(mapped_columns.get('description', ''), '')) if 'description' in mapped_columns else ''
-                        description_vietnamese = str(row.get(mapped_columns.get('description_vietnamese', ''), '')) if 'description_vietnamese' in mapped_columns else ''
-                        category = str(row.get(mapped_columns.get('category', ''), 'General')) if 'category' in mapped_columns else 'General'
-                        category_vietnamese = str(row.get(mapped_columns.get('category_vietnamese', ''), '')) if 'category_vietnamese' in mapped_columns else ''
-                        features = str(row.get(mapped_columns.get('features', ''), '')) if 'features' in mapped_columns else ''
-                        features_vietnamese = str(row.get(mapped_columns.get('features_vietnamese', ''), '')) if 'features_vietnamese' in mapped_columns else ''
-                        specifications = str(row.get(mapped_columns.get('specifications', ''), '')) if 'specifications' in mapped_columns else ''
-                        specifications_vietnamese = str(row.get(mapped_columns.get('specifications_vietnamese', ''), '')) if 'specifications_vietnamese' in mapped_columns else ''
-
-                        price = 0
-                        if 'price' in mapped_columns:
-                            try:
-                                price_val = row.get(mapped_columns['price'], 0)
-                                if pd.notna(price_val):
-                                    price = float(str(price_val).replace(',', '').replace('$', ''))
-                                    price = float(price_str)
-                            except (ValueError, TypeError):
-                                price = 0
+            for _, row in batch_df.iterrows():
+                try:
+                    # Extract fields using processed data (already mapped by processor)
+                    name = str(row.get('name', ''))
+                    name_vietnamese = str(row.get('name_vietnamese', ''))
+                    description = str(row.get('description', ''))
+                    description_vietnamese = str(row.get('description_vietnamese', ''))
+                    category = row.get('category', category)  # Use detected category if not in row
+                    category_vietnamese = str(row.get('category_vietnamese', ''))
+                    features = str(row.get('features', ''))
+                    features_vietnamese = str(row.get('features_vietnamese', ''))
+                    specifications = str(row.get('specifications', ''))
+                    specifications_vietnamese = str(row.get('specifications_vietnamese', ''))
+                    
+                    # Handle price
+                    price = 0
+                    if 'price' in row:
+                        try:
+                            price_val = row.get('price', 0)
+                            if pd.notna(price_val):
+                                price = float(str(price_val).replace(',', '').replace('$', ''))
+                        except (ValueError, TypeError):
+                            price = 0
+                    
+                    # ADD NEW FIELDS from enhanced schema
+                    sku = str(row.get('sku', f"{category}_{int(time.time())}_{added_count}"))
+                    subcategory = str(row.get('subcategory', ''))
+                    stock_count = int(row.get('stock_count', 0)) if row.get('stock_count') else 0
+                    brand = str(row.get('brand', ''))
+                    model = str(row.get('model', name))  # Use name as model if not specified
+                    warranty = str(row.get('warranty', ''))
+                    availability = str(row.get('availability', 'in_stock'))
+                    
+                    # JSON fields
+                    image_urls = json.dumps(row.get('image_urls', [])) if row.get('image_urls') else '[]'
+                    tags = json.dumps(row.get('tags', [])) if row.get('tags') else '[]'
+                    use_cases = json.dumps(row.get('use_cases', [])) if row.get('use_cases') else '[]'
+                    target_audience = json.dumps(row.get('target_audience', [])) if row.get('target_audience') else '[]'
+                    
+                    # Rating and reviews
+                    rating = float(row.get('rating', 0)) if row.get('rating') else 0.0
+                    review_count = int(row.get('review_count', 0)) if row.get('review_count') else 0
                         
-                        if not name and not name_vietnamese:
-                            continue
+                    if not name and not name_vietnamese:
+                        continue
                             
                         product_text_en = f"{name} {description} {features} {specifications}"
                         product_text_vi = f"{name_vietnamese} {description_vietnamese} {features_vietnamese} {specifications_vietnamese}"
@@ -2057,9 +2385,9 @@ class VietnameseAISalesBot:
                             'combined_text': combined_text
                         })
                         
-                    except Exception as row_error:
-                        self.update_training_status(f"⚠️ Error processing row: {row_error}")
-                        continue
+                except Exception as row_error:
+                    self.update_training_status(f"⚠️ Error processing row: {row_error}")
+                    continue
                 
                 # RTX 4090 optimized batch embedding generation
                 if self.embedding_model and batch_texts:
@@ -2072,24 +2400,41 @@ class VietnameseAISalesBot:
                                 
                                 cursor.execute('''
                                     INSERT INTO products 
-                                    (name, name_vietnamese, description, description_vietnamese, 
-                                     category, category_vietnamese, price, features, features_vietnamese,
-                                     specifications, specifications_vietnamese, source_file, embedding, created_at)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    (sku, name, name_vietnamese, description, description_vietnamese, 
+                                     category, category_vietnamese, subcategory, price, features, 
+                                     features_vietnamese, specifications, specifications_vietnamese, 
+                                     availability, stock_count, brand, model, warranty, 
+                                     image_urls, tags, rating, review_count, use_cases, 
+                                     target_audience, source_file, embedding, created_at, updated_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 ''', (
+                                    product_data['sku'],
                                     product_data['name'],
                                     product_data['name_vietnamese'],
                                     product_data['description'],
                                     product_data['description_vietnamese'],
                                     product_data['category'],
                                     product_data['category_vietnamese'],
+                                    product_data['subcategory'],
                                     product_data['price'],
                                     product_data['features'],
                                     product_data['features_vietnamese'],
                                     product_data['specifications'],
                                     product_data['specifications_vietnamese'],
+                                    product_data['availability'],
+                                    product_data['stock_count'],
+                                    product_data['brand'],
+                                    product_data['model'],
+                                    product_data['warranty'],
+                                    product_data['image_urls'],
+                                    product_data['tags'],
+                                    product_data['rating'],
+                                    product_data['review_count'],
+                                    product_data['use_cases'],
+                                    product_data['target_audience'],
                                     product_data['source_file'],
                                     embedding_blob,
+                                    datetime.now().isoformat(),
                                     datetime.now().isoformat()
                                 ))
                                 added_count += 1
@@ -2914,7 +3259,7 @@ class VietnameseAISalesBot:
         return result
 
     def refresh_category_view_after_import(self, category):
-        """Refresh TreeView after import"""
+        """Refresh TreeView after import or deletion"""
         try:
             if category == 'SSD' and hasattr(self, 'ssd_tree'):
                 self.refresh_ssd_tree()
@@ -2922,8 +3267,12 @@ class VietnameseAISalesBot:
                 self.refresh_memory_tree()
             elif category == 'Motherboard' and hasattr(self, 'mb_tree'):
                 self.refresh_motherboard_tree()
+            print(f"✅ Successfully refreshed {category} TreeView")
         except Exception as e:
-            print(f"Error refreshing tree view: {e}")
+            print(f"Error refreshing tree view for {category}: {e}")
+            # Don't let the refresh error break the entire operation
+            import traceback
+            traceback.print_exc()
             
     def open_import_dialog(self):
         """Open the Excel import dialog"""
@@ -2957,11 +3306,23 @@ class VietnameseAISalesBot:
             products = cursor.fetchall()
             
             for i, product in enumerate(products, 1):
-                if len(product) >= 6:
+                if len(product) >= 9:
+                    # Properly handle price formatting
+                    price = product[5] if product[5] is not None else 0
+                    try:
+                        price_float = float(price) if price else 0
+                        price_formatted = f"{price_float:,.0f}"
+                    except (ValueError, TypeError):
+                        price_formatted = "0"
+                    
                     self.ssd_tree.insert('', 'end', values=(
-                        i, product[2] or 'SSD Product', product[6] or 'Interface', 
-                        product[1] or '', product[6] or '', product[8] or 'Available', 
-                        f"{product[5] or 0:,.0f}"
+                        i,                              # STT
+                        product[2] or 'SSD Product',    # Product name
+                        product[6] or 'Interface',      # Interface
+                        product[1] or '',               # Model
+                        product[7] or '',               # Specifications
+                        product[8] or 'Available',      # Stock status
+                        price_formatted                 # Formatted price
                     ))
         except Exception as e:
             print(f"Error refreshing SSD tree: {e}")
@@ -2977,11 +3338,23 @@ class VietnameseAISalesBot:
             products = cursor.fetchall()
             
             for i, product in enumerate(products, 1):
-                if len(product) >= 6:
+                if len(product) >= 9:
+                    # Properly handle price formatting
+                    price = product[5] if product[5] is not None else 0
+                    try:
+                        price_float = float(price) if price else 0
+                        price_formatted = f"{price_float:,.0f}"
+                    except (ValueError, TypeError):
+                        price_formatted = "0"
+                    
                     self.memory_tree.insert('', 'end', values=(
-                        i, product[2] or 'Memory Product', product[6] or 'Interface', 
-                        product[1] or '', product[6] or '', product[8] or 'Available', 
-                        f"{product[5] or 0:,.0f}"
+                        i,                              # STT
+                        product[2] or 'Memory Product', # Product name
+                        product[6] or 'Interface',      # Interface
+                        product[1] or '',               # Model
+                        product[7] or '',               # Specifications
+                        product[8] or 'Available',      # Stock status
+                        price_formatted                 # Formatted price
                     ))
         except Exception as e:
             print(f"Error refreshing Memory tree: {e}")
@@ -2997,11 +3370,24 @@ class VietnameseAISalesBot:
             products = cursor.fetchall()
             
             for i, product in enumerate(products, 1):
-                if len(product) >= 6:
+                if len(product) >= 9:  # Ensure we have enough columns
+                    # Properly handle price formatting
+                    price = product[5] if product[5] is not None else 0
+                    try:
+                        # Convert to float first, then format
+                        price_float = float(price) if price else 0
+                        price_formatted = f"{price_float:,.0f}"
+                    except (ValueError, TypeError):
+                        price_formatted = "0"
+                    
                     self.mb_tree.insert('', 'end', values=(
-                        i, product[2] or 'Motherboard Product', product[7] or 'Chipset', 
-                        product[1] or '', product[6] or '', product[8] or 'Available', 
-                        f"{product[5] or 0:,.0f}"
+                        i,                              # STT
+                        product[2] or 'Motherboard Product',  # Product name (description)
+                        product[6] or 'Chipset',        # Chipset (features field)
+                        product[1] or '',               # Model (name field)
+                        product[7] or '',               # Specifications
+                        product[8] or 'Available',      # Stock status (availability)
+                        price_formatted                 # Formatted price
                     ))
         except Exception as e:
             print(f"Error refreshing Motherboard tree: {e}")
@@ -3064,14 +3450,22 @@ class VietnameseAISalesBot:
                     
         except Exception as e:
             print(f"Error loading existing products: {e}")
-
-        
+       
+ 
     def setup_training_tab(self):
-        """Setup training interface with file upload capabilities"""
+        """Setup training interface with file upload and data management capabilities"""
         training_frame = ttk.Frame(self.notebook)
         self.notebook.add(training_frame, text="📚 Data Training")
         
-        upload_frame = ttk.LabelFrame(training_frame, text="RTX 4090 Optimized Training Data Upload")
+        # Create sub-notebook for training options
+        self.training_sub_notebook = ttk.Notebook(training_frame)
+        self.training_sub_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Tab 1: Upload Data
+        upload_tab = ttk.Frame(self.training_sub_notebook)
+        self.training_sub_notebook.add(upload_tab, text="📤 Upload Data")
+        
+        upload_frame = ttk.LabelFrame(upload_tab, text="RTX 4090 Optimized Training Data Upload")
         upload_frame.pack(fill=tk.X, padx=10, pady=5)
         
         upload_btn_frame = ttk.Frame(upload_frame)
@@ -3086,7 +3480,164 @@ class VietnameseAISalesBot:
         ttk.Button(upload_btn_frame, text="🖼️ Upload Images (OCR)", 
                   command=lambda: self.process_files('image')).pack(side=tk.LEFT, padx=5, pady=5)
         
-        options_frame = ttk.LabelFrame(training_frame, text="RTX 4090 Training Options")
+        # Training status for upload tab
+        self.training_status = scrolledtext.ScrolledText(
+            upload_tab, height=15, state=tk.DISABLED, font=self.vietnamese_font
+        )
+        self.training_status.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Tab 2: Data Management
+        data_mgmt_tab = ttk.Frame(self.training_sub_notebook)
+        self.training_sub_notebook.add(data_mgmt_tab, text="📁 Data Management")
+        
+        # Control panel for data management
+        control_frame = ttk.Frame(data_mgmt_tab)
+        control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(control_frame, text="🔄 Refresh Files", 
+                  command=self.refresh_uploaded_files_list).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="🔗 Sync Files", 
+                  command=self.sync_upload_folder).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="📂 Open Upload Folder", 
+                  command=self.open_upload_folder).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="🗑️ Delete Selected", 
+                  command=self.delete_selected_files).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="📥 Re-process Selected", 
+                  command=self.reprocess_selected_files).pack(side=tk.LEFT, padx=5)
+        
+        # Info label
+        info_frame = ttk.Frame(data_mgmt_tab)
+        info_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.upload_folder_label = ttk.Label(info_frame, font=self.vietnamese_font)
+        self.upload_folder_label.pack(side=tk.LEFT)
+        
+        # TreeView for uploaded files
+        tree_frame = ttk.Frame(data_mgmt_tab)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Create TreeView with columns
+        self.uploaded_files_tree = ttk.Treeview(
+            tree_frame,
+            columns=('ID', 'Style', 'Name', 'Upload Date', 'Category', 'Source File', 'Size', 'Status'),
+            show='tree headings',
+            selectmode='extended'
+        )
+        
+        # Configure columns
+        self.uploaded_files_tree.heading('#0', text='')
+        self.uploaded_files_tree.heading('ID', text='ID')
+        self.uploaded_files_tree.heading('Style', text='Style')
+        self.uploaded_files_tree.heading('Name', text='Name')
+        self.uploaded_files_tree.heading('Upload Date', text='Upload Date')
+        self.uploaded_files_tree.heading('Category', text='Category')
+        self.uploaded_files_tree.heading('Source File', text='Source File')
+        self.uploaded_files_tree.heading('Size', text='Size')
+        self.uploaded_files_tree.heading('Status', text='Status')
+        
+        # Column widths
+        self.uploaded_files_tree.column('#0', width=0, stretch=False)
+        self.uploaded_files_tree.column('ID', width=50)
+        self.uploaded_files_tree.column('Style', width=80)
+        self.uploaded_files_tree.column('Name', width=200)
+        self.uploaded_files_tree.column('Upload Date', width=120)
+        self.uploaded_files_tree.column('Category', width=100)
+        self.uploaded_files_tree.column('Source File', width=150)
+        self.uploaded_files_tree.column('Size', width=80)
+        self.uploaded_files_tree.column('Status', width=80)
+        
+        # Scrollbars
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.uploaded_files_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.uploaded_files_tree.xview)
+        self.uploaded_files_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        # Pack TreeView and scrollbars
+        self.uploaded_files_tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
+        
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Status bar
+        self.data_mgmt_status_label = ttk.Label(data_mgmt_tab, text="Ready", font=self.vietnamese_font)
+        self.data_mgmt_status_label.pack(fill=tk.X, padx=10, pady=5)
+        
+        # (Include the Clear Training Data tab code from previous implementation here)
+        
+        # Tab 3: Clear Training Data
+        clear_tab = ttk.Frame(self.training_sub_notebook)
+        self.training_sub_notebook.add(clear_tab, text="🧹 Clear Training Data")
+
+        # Control panel for clear tab
+        control_frame = ttk.Frame(clear_tab)
+        control_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Button(control_frame, text="🔄 Refresh List", 
+                  command=self.refresh_embedded_items_list).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="🗑️ Clear Selected Embeddings", 
+                  command=self.clear_selected_embeddings).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="📊 Show Embedding Stats", 
+                  command=self.show_embedding_stats).pack(side=tk.LEFT, padx=5)
+
+        # Info label
+        info_label = ttk.Label(clear_tab, 
+                              text="Select items below to clear their embeddings (AI search data). Products/files remain in database.",
+                              font=self.vietnamese_font)
+        info_label.pack(fill=tk.X, padx=10, pady=5)
+
+        # TreeView for embedded items
+        tree_frame = ttk.Frame(clear_tab)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # Create TreeView with columns
+        self.embedded_items_tree = ttk.Treeview(
+            tree_frame,
+            columns=('Type', 'Name', 'Category', 'Source', 'Upload Date', 'Has Embedding'),
+            show='tree headings',
+            selectmode='extended'  # Allow multiple selection
+        )
+
+        # Configure columns
+        self.embedded_items_tree.heading('#0', text='ID')
+        self.embedded_items_tree.heading('Type', text='Type')
+        self.embedded_items_tree.heading('Name', text='Name')
+        self.embedded_items_tree.heading('Category', text='Category')
+        self.embedded_items_tree.heading('Source', text='Source File')
+        self.embedded_items_tree.heading('Upload Date', text='Upload Date')
+        self.embedded_items_tree.heading('Has Embedding', text='Embedding')
+
+        # Column widths
+        self.embedded_items_tree.column('#0', width=50)
+        self.embedded_items_tree.column('Type', width=80)
+        self.embedded_items_tree.column('Name', width=200)
+        self.embedded_items_tree.column('Category', width=100)
+        self.embedded_items_tree.column('Source', width=150)
+        self.embedded_items_tree.column('Upload Date', width=120)
+        self.embedded_items_tree.column('Has Embedding', width=80)
+
+        # Scrollbars
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.embedded_items_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.embedded_items_tree.xview)
+        self.embedded_items_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        # Pack TreeView and scrollbars
+        self.embedded_items_tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
+
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        # Status bar for clear tab
+        self.clear_status_label = ttk.Label(clear_tab, text="Ready", font=self.vietnamese_font)
+        self.clear_status_label.pack(fill=tk.X, padx=10, pady=5)
+
+        # Tab 4: Training Options
+        options_tab = ttk.Frame(self.training_sub_notebook)
+        self.training_sub_notebook.add(options_tab, text="⚙️ Training Options")
+        
+        options_frame = ttk.LabelFrame(options_tab, text="RTX 4090 Training Options")
         options_frame.pack(fill=tk.X, padx=10, pady=5)
         
         options_btn_frame = ttk.Frame(options_frame)
@@ -3094,16 +3645,683 @@ class VietnameseAISalesBot:
         
         ttk.Button(options_btn_frame, text="🔄 Regenerate All Embeddings", 
                   command=self.regenerate_all_embeddings).pack(side=tk.LEFT, padx=5)
-        ttk.Button(options_btn_frame, text="🧹 Clear Training Data", 
-                  command=self.clear_training_data).pack(side=tk.LEFT, padx=5)
         ttk.Button(options_btn_frame, text="📈 Training Statistics", 
                   command=self.show_training_stats).pack(side=tk.LEFT, padx=5)
         
-        self.training_status = scrolledtext.ScrolledText(
-            training_frame, height=20, state=tk.DISABLED, font=self.vietnamese_font
+        # Initialize upload folder
+        self.setup_upload_folder()
+        
+        # Load uploaded files on startup
+        self.refresh_uploaded_files_list()
+        # Load embedded items on startup
+        self.refresh_embedded_items_list()
+        
+    def setup_upload_folder(self):
+        """Create and setup the Upload Files folder"""
+        try:
+            # Get the main AI CHATBOT folder path
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            self.upload_folder = os.path.join(script_dir, "Upload Files")
+            
+            # Create folder if it doesn't exist
+            if not os.path.exists(self.upload_folder):
+                os.makedirs(self.upload_folder)
+                print(f"✅ Created Upload Files folder at: {self.upload_folder}")
+            else:
+                print(f"📁 Upload Files folder exists at: {self.upload_folder}")
+            
+            # Update label
+            if hasattr(self, 'upload_folder_label'):
+                self.upload_folder_label.config(text=f"📁 Upload Folder: {self.upload_folder}")
+            
+        except Exception as e:
+            self.logger.error(f"Error setting up upload folder: {e}")
+            print(f"❌ Error creating upload folder: {e}")
+
+    def save_uploaded_file(self, source_path, file_type):
+        """Save uploaded file to Upload Files folder and return new path"""
+        try:
+            if not os.path.exists(source_path):
+                return source_path
+            
+            # Create subfolder based on file type
+            type_folders = {
+                'excel': 'Excel Files',
+                'pdf': 'PDF Files',
+                'word': 'Word Files',
+                'image': 'Image Files'
+            }
+            
+            subfolder = type_folders.get(file_type, 'Other Files')
+            type_folder = os.path.join(self.upload_folder, subfolder)
+            
+            if not os.path.exists(type_folder):
+                os.makedirs(type_folder)
+            
+            # Generate unique filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.basename(source_path)
+            name, ext = os.path.splitext(filename)
+            new_filename = f"{name}_{timestamp}{ext}"
+            
+            # Copy file to upload folder
+            dest_path = os.path.join(type_folder, new_filename)
+            shutil.copy2(source_path, dest_path)
+            
+            print(f"✅ Saved file to: {dest_path}")
+            return dest_path
+            
+        except Exception as e:
+            self.logger.error(f"Error saving uploaded file: {e}")
+            return source_path
+    def refresh_uploaded_files_list(self):
+        """Refresh the list of uploaded files in TreeView"""
+        try:
+            # Clear existing items
+            for item in self.uploaded_files_tree.get_children():
+                self.uploaded_files_tree.delete(item)
+            
+            cursor = self.conn.cursor()
+            
+            # Get all products grouped by source file
+            cursor.execute("""
+                SELECT 
+                    MIN(id) as id,
+                    source_file,
+                    COUNT(*) as item_count,
+                    MIN(category) as category,
+                    MIN(created_at) as upload_date
+                FROM products
+                WHERE source_file IS NOT NULL AND source_file != 'Manual Entry'
+                GROUP BY source_file
+                ORDER BY MIN(created_at) DESC
+            """)
+            product_files = cursor.fetchall()
+            
+            file_id = 1
+            for product_file in product_files:
+                prod_id, source_file, item_count, category, upload_date = product_file
+                
+                # Determine file style and status
+                file_style, file_size, status = self.get_file_info(source_file)
+                
+                # Format date
+                try:
+                    date_obj = datetime.fromisoformat(upload_date)
+                    formatted_date = date_obj.strftime('%Y-%m-%d %H:%M')
+                except:
+                    formatted_date = upload_date or 'Unknown'
+                
+                # Extract filename
+                filename = os.path.basename(source_file) if source_file else 'Unknown'
+                
+                # Insert into tree
+                self.uploaded_files_tree.insert('', 'end',
+                                              values=(file_id, file_style, filename, formatted_date,
+                                                     category, source_file, file_size, status))
+                file_id += 1
+            
+            # Get all knowledge base files
+            cursor.execute("""
+                SELECT 
+                    MIN(id) as id,
+                    source,
+                    COUNT(*) as item_count,
+                    MIN(created_at) as upload_date
+                FROM knowledge_base
+                WHERE source IS NOT NULL
+                GROUP BY source
+                ORDER BY MIN(created_at) DESC
+            """)
+            kb_files = cursor.fetchall()
+            
+            for kb_file in kb_files:
+                kb_id, source, item_count, upload_date = kb_file
+                
+                # Determine file style and status
+                file_style, file_size, status = self.get_file_info(source)
+                
+                # Format date
+                try:
+                    date_obj = datetime.fromisoformat(upload_date)
+                    formatted_date = date_obj.strftime('%Y-%m-%d %H:%M')
+                except:
+                    formatted_date = upload_date or 'Unknown'
+                
+                # Extract filename
+                filename = os.path.basename(source) if source else 'Unknown'
+                
+                # Insert into tree
+                self.uploaded_files_tree.insert('', 'end',
+                                              values=(file_id, file_style, filename, formatted_date,
+                                                     'Knowledge', source, file_size, status))
+                file_id += 1
+            
+            # Update status
+            total_files = len(product_files) + len(kb_files)
+            self.data_mgmt_status_label.config(text=f"Total files: {total_files}")
+            
+        except Exception as e:
+            self.logger.error(f"Error refreshing uploaded files list: {e}")
+            messagebox.showerror("Error", f"Error loading uploaded files: {e}")
+
+    def get_file_info(self, file_path):
+        """Get file style, size, and status"""
+        try:
+            if not file_path or file_path == 'Sample Data':
+                return '🎯 Sample', 'N/A', 'Built-in'
+            
+            # Determine file style
+            ext = os.path.splitext(file_path)[1].lower()
+            style_map = {
+                '.xlsx': '📊 Excel',
+                '.xls': '📊 Excel',
+                '.csv': '📊 CSV',
+                '.pdf': '📄 PDF',
+                '.doc': '📝 Word',
+                '.docx': '📝 Word',
+                '.png': '🖼️ Image',
+                '.jpg': '🖼️ Image',
+                '.jpeg': '🖼️ Image',
+                '.bmp': '🖼️ Image',
+                '.tiff': '🖼️ Image'
+            }
+            file_style = style_map.get(ext, '📄 File')
+            
+            # Get file size and status
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                if file_size < 1024:
+                    size_str = f"{file_size} B"
+                elif file_size < 1024 * 1024:
+                    size_str = f"{file_size / 1024:.1f} KB"
+                else:
+                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
+                status = "✅ Active"
+            else:
+                size_str = "N/A"
+                status = "⚠️ Missing"
+            
+            return file_style, size_str, status
+            
+        except Exception as e:
+            return '❓ Unknown', 'Error', '❌ Error'
+
+    def sync_upload_folder(self):
+        """Sync files from Upload Files folder to database"""
+        try:
+            if not hasattr(self, 'upload_folder') or not os.path.exists(self.upload_folder):
+                messagebox.showwarning("No Folder", "Upload Files folder not found")
+                return
+            
+            # Ask for confirmation
+            result = messagebox.askyesno(
+                "Sync Files",
+                "This will scan the Upload Files folder and process any new files.\n\n"
+                "Files already in the database will be skipped.\n\n"
+                "Continue?"
+            )
+            
+            if not result:
+                return
+            
+            # Start sync in background thread
+            threading.Thread(target=self.sync_files_worker, daemon=True).start()
+            
+        except Exception as e:
+            self.logger.error(f"Error starting sync: {e}")
+            messagebox.showerror("Error", f"Error starting sync: {e}")
+
+    def sync_files_worker(self):
+        """Worker thread for syncing files"""
+        try:
+            self.update_training_status("🔄 Starting folder sync...")
+            
+            # Get all existing source files from database
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT DISTINCT source_file FROM products WHERE source_file IS NOT NULL")
+            existing_product_files = set(row[0] for row in cursor.fetchall())
+            
+            cursor.execute("SELECT DISTINCT source FROM knowledge_base WHERE source IS NOT NULL")
+            existing_kb_files = set(row[0] for row in cursor.fetchall())
+            
+            existing_files = existing_product_files | existing_kb_files
+            
+            # Scan upload folder
+            new_files = []
+            file_map = {
+                'Excel Files': 'excel',
+                'PDF Files': 'pdf',
+                'Word Files': 'word',
+                'Image Files': 'image'
+            }
+            
+            for subfolder, file_type in file_map.items():
+                folder_path = os.path.join(self.upload_folder, subfolder)
+                if os.path.exists(folder_path):
+                    for filename in os.listdir(folder_path):
+                        file_path = os.path.join(folder_path, filename)
+                        if os.path.isfile(file_path) and file_path not in existing_files:
+                            new_files.append((file_path, file_type))
+            
+            if not new_files:
+                self.update_training_status("✅ No new files found to sync")
+                messagebox.showinfo("Sync Complete", "No new files found to sync")
+                return
+            
+            self.update_training_status(f"📁 Found {len(new_files)} new files to process")
+            
+            # Process new files
+            processed = 0
+            for file_path, file_type in new_files:
+                try:
+                    self.update_training_status(f"🔄 Processing: {os.path.basename(file_path)}")
+                    
+                    if file_type == 'excel':
+                        self.process_excel_file(file_path)
+                    elif file_type == 'pdf':
+                        self.process_pdf_file(file_path)
+                    elif file_type == 'word':
+                        self.process_word_file(file_path)
+                    elif file_type == 'image':
+                        self.process_image_file(file_path)
+                    
+                    processed += 1
+                    
+                except Exception as e:
+                    self.update_training_status(f"❌ Error processing {os.path.basename(file_path)}: {e}")
+            
+            self.update_training_status(f"✅ Sync complete: {processed}/{len(new_files)} files processed")
+            
+            # Refresh the file list
+            self.root.after(0, self.refresh_uploaded_files_list)
+            
+            messagebox.showinfo("Sync Complete", f"Processed {processed} new files successfully!")
+            
+        except Exception as e:
+            self.logger.error(f"Sync worker error: {e}")
+            self.update_training_status(f"❌ Sync error: {e}")
+
+    def open_upload_folder(self):
+        """Open the Upload Files folder in file explorer"""
+        try:
+            if hasattr(self, 'upload_folder') and os.path.exists(self.upload_folder):
+                if os.name == 'nt':  # Windows
+                    os.startfile(self.upload_folder)
+                elif os.name == 'posix':  # macOS and Linux
+                    os.system(f'open "{self.upload_folder}"')
+            else:
+                messagebox.showwarning("No Folder", "Upload Files folder not found")
+        except Exception as e:
+            self.logger.error(f"Error opening folder: {e}")
+            messagebox.showerror("Error", f"Error opening folder: {e}")
+
+    def delete_selected_files(self):
+        """Delete selected files from database and optionally from disk"""
+        selected_items = self.uploaded_files_tree.selection()
+        
+        if not selected_items:
+            messagebox.showwarning("No Selection", "Please select files to delete")
+            return
+        
+        # Get file information
+        files_to_delete = []
+        for item in selected_items:
+            values = self.uploaded_files_tree.item(item, 'values')
+            files_to_delete.append({
+                'name': values[2],
+                'source': values[5],
+                'category': values[4]
+            })
+        
+        # Confirm deletion
+        result = messagebox.askyesnocancel(
+            "Delete Files",
+            f"Delete {len(files_to_delete)} selected file(s)?\n\n"
+            "YES - Delete from database and disk\n"
+            "NO - Delete from database only\n"
+            "CANCEL - Cancel operation"
         )
-        self.training_status.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        if result is None:  # Cancel
+            return
+        
+        delete_from_disk = result  # True for Yes, False for No
+        
+        try:
+            cursor = self.conn.cursor()
+            deleted_count = 0
+            
+            for file_info in files_to_delete:
+                source_file = file_info['source']
+                
+                # Delete from database
+                if file_info['category'] == 'Knowledge':
+                    cursor.execute("DELETE FROM knowledge_base WHERE source = ?", (source_file,))
+                else:
+                    cursor.execute("DELETE FROM products WHERE source_file = ?", (source_file,))
+                
+                deleted_count += cursor.rowcount
+                
+                # Delete from disk if requested
+                if delete_from_disk and os.path.exists(source_file):
+                    try:
+                        os.remove(source_file)
+                        print(f"🗑️ Deleted file from disk: {source_file}")
+                    except Exception as e:
+                        print(f"⚠️ Could not delete file from disk: {e}")
+            
+            self.conn.commit()
+            
+            # Refresh the list
+            self.refresh_uploaded_files_list()
+            
+            messagebox.showinfo("Success", f"Deleted {deleted_count} file(s) successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error deleting files: {e}")
+            messagebox.showerror("Error", f"Error deleting files: {e}")
+
+    def reprocess_selected_files(self):
+        """Re-process selected files to update embeddings"""
+        selected_items = self.uploaded_files_tree.selection()
+        
+        if not selected_items:
+            messagebox.showwarning("No Selection", "Please select files to re-process")
+            return
+        
+        # Get file information
+        files_to_process = []
+        for item in selected_items:
+            values = self.uploaded_files_tree.item(item, 'values')
+            file_path = values[5]  # Source file path
+            
+            # Determine file type from style
+            style = values[1]
+            if '📊' in style:
+                file_type = 'excel'
+            elif '📄' in style:
+                file_type = 'pdf'
+            elif '📝' in style:
+                file_type = 'word'
+            elif '🖼️' in style:
+                file_type = 'image'
+            else:
+                continue
+            
+            files_to_process.append((file_path, file_type))
+        
+        if not files_to_process:
+            messagebox.showwarning("No Valid Files", "No valid files selected for re-processing")
+            return
+        
+        # Confirm re-processing
+        result = messagebox.askyesno(
+            "Re-process Files",
+            f"Re-process {len(files_to_process)} selected file(s)?\n\n"
+            "This will update their embeddings and data."
+        )
+        
+        if not result:
+            return
+        
+        # Start re-processing in background
+        threading.Thread(
+            target=self.process_files_worker,
+            args=([f[0] for f in files_to_process], 'mixed'),
+            daemon=True
+        ).start()
+        
+    # Add wrapper methods that save files before processing
+    def process_excel_file_with_tracking(self, file_path):
+        """Process Excel file and track in Upload Files folder"""
+        self.process_excel_file(file_path)
+        
+    def process_pdf_file_with_tracking(self, file_path):
+        """Process PDF file and track in Upload Files folder"""
+        self.process_pdf_file(file_path)
+        
+    def process_word_file_with_tracking(self, file_path):
+        """Process Word file and track in Upload Files folder"""
+        self.process_word_file(file_path)
+        
+    def process_image_file_with_tracking(self, file_path):
+        """Process image file and track in Upload Files folder"""
+        self.process_image_file(file_path)    
+        
     
+    def refresh_embedded_items_list(self):
+        """Refresh the list of embedded items in TreeView"""
+        try:
+            # Clear existing items
+            for item in self.embedded_items_tree.get_children():
+                self.embedded_items_tree.delete(item)
+            
+            cursor = self.conn.cursor()
+            
+            # Get all products
+            cursor.execute("""
+                SELECT id, name, category, source_file, created_at, 
+                       CASE WHEN embedding IS NOT NULL THEN 'Yes' ELSE 'No' END as has_embedding
+                FROM products
+                ORDER BY created_at DESC
+            """)
+            products = cursor.fetchall()
+            
+            # Add products to tree
+            for product in products:
+                product_id, name, category, source, created_at, has_embedding = product
+                
+                # Determine file type from source
+                if source:
+                    if source.endswith(('.xlsx', '.xls', '.csv')):
+                        file_type = '📊 Excel'
+                    elif source == 'Sample Data':
+                        file_type = '🎯 Sample'
+                    elif source == 'Manual Entry':
+                        file_type = '✏️ Manual'
+                    else:
+                        file_type = '📄 File'
+                else:
+                    file_type = '❓ Unknown'
+                
+                # Format date
+                try:
+                    date_obj = datetime.fromisoformat(created_at)
+                    formatted_date = date_obj.strftime('%Y-%m-%d %H:%M')
+                except:
+                    formatted_date = created_at or 'Unknown'
+                
+                # Insert into tree with product prefix in ID
+                self.embedded_items_tree.insert('', 'end', 
+                                              text=f"P{product_id}",
+                                              values=(file_type, name, category, source or 'N/A', 
+                                                     formatted_date, has_embedding))
+            
+            # Get all knowledge base entries
+            cursor.execute("""
+                SELECT id, topic, source, created_at,
+                       CASE WHEN embedding IS NOT NULL THEN 'Yes' ELSE 'No' END as has_embedding
+                FROM knowledge_base
+                ORDER BY created_at DESC
+            """)
+            kb_entries = cursor.fetchall()
+            
+            # Add knowledge base entries to tree
+            for kb in kb_entries:
+                kb_id, topic, source, created_at, has_embedding = kb
+                
+                # Determine file type
+                if source:
+                    if source.endswith('.pdf'):
+                        file_type = '📄 PDF'
+                    elif source.endswith(('.doc', '.docx')):
+                        file_type = '📝 Word'
+                    elif source.endswith(('.png', '.jpg', '.jpeg')):
+                        file_type = '🖼️ OCR'
+                    else:
+                        file_type = '📚 KB'
+                else:
+                    file_type = '📚 KB'
+                
+                # Format date
+                try:
+                    date_obj = datetime.fromisoformat(created_at)
+                    formatted_date = date_obj.strftime('%Y-%m-%d %H:%M')
+                except:
+                    formatted_date = created_at or 'Unknown'
+                
+                # Insert into tree with KB prefix in ID
+                self.embedded_items_tree.insert('', 'end',
+                                              text=f"K{kb_id}",
+                                              values=(file_type, topic[:50] + '...' if len(topic) > 50 else topic, 
+                                                     'Knowledge', source or 'N/A', formatted_date, has_embedding))
+            
+            # Update status
+            total_items = len(products) + len(kb_entries)
+            self.clear_status_label.config(text=f"Total items: {total_items} ({len(products)} products, {len(kb_entries)} knowledge entries)")
+            
+        except Exception as e:
+            self.logger.error(f"Error refreshing embedded items list: {e}")
+            messagebox.showerror("Error", f"Error loading embedded items: {e}")
+
+    def clear_selected_embeddings(self):
+        """Clear embeddings for selected items only"""
+        selected_items = self.embedded_items_tree.selection()
+        
+        if not selected_items:
+            messagebox.showwarning("No Selection", "Please select items to clear embeddings")
+            return
+        
+        # Confirm action
+        item_count = len(selected_items)
+        result = messagebox.askyesno(
+            "Clear Embeddings",
+            f"Clear embeddings for {item_count} selected item(s)?\n\n"
+            "This will remove AI search capability for these items.\n"
+            "The items themselves will remain in the database.\n\n"
+            "Continue?"
+        )
+        
+        if not result:
+            return
+        
+        try:
+            cursor = self.conn.cursor()
+            cleared_products = 0
+            cleared_kb = 0
+            
+            for item in selected_items:
+                item_id = self.embedded_items_tree.item(item, 'text')
+                
+                if item_id.startswith('P'):  # Product
+                    product_id = int(item_id[1:])
+                    cursor.execute("""
+                        UPDATE products 
+                        SET embedding = NULL 
+                        WHERE id = ?
+                    """, (product_id,))
+                    cleared_products += cursor.rowcount
+                    
+                elif item_id.startswith('K'):  # Knowledge base
+                    kb_id = int(item_id[1:])
+                    cursor.execute("""
+                        UPDATE knowledge_base 
+                        SET embedding = NULL 
+                        WHERE id = ?
+                    """, (kb_id,))
+                    cleared_kb += cursor.rowcount
+            
+            self.conn.commit()
+            
+            # Clear GPU cache
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Refresh the list
+            self.refresh_embedded_items_list()
+            
+            # Show result
+            messagebox.showinfo(
+                "Success",
+                f"Embeddings cleared successfully!\n\n"
+                f"Products: {cleared_products}\n"
+                f"Knowledge Base: {cleared_kb}\n\n"
+                f"Use 'Regenerate All Embeddings' to restore AI search."
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error clearing embeddings: {e}")
+            messagebox.showerror("Error", f"Error clearing embeddings: {e}")
+
+    def show_embedding_stats(self):
+        """Show detailed embedding statistics"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Get product stats
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(embedding) as with_embedding,
+                    AVG(LENGTH(embedding)) as avg_embedding_size
+                FROM products
+            """)
+            prod_stats = cursor.fetchone()
+            
+            # Get knowledge base stats
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(embedding) as with_embedding,
+                    AVG(LENGTH(embedding)) as avg_embedding_size
+                FROM knowledge_base
+            """)
+            kb_stats = cursor.fetchone()
+            
+            # Get stats by category
+            cursor.execute("""
+                SELECT 
+                    category,
+                    COUNT(*) as total,
+                    COUNT(embedding) as with_embedding
+                FROM products
+                GROUP BY category
+            """)
+            category_stats = cursor.fetchall()
+            
+            # Build stats message
+            stats_msg = "=== EMBEDDING STATISTICS ===\n\n"
+            stats_msg += f"PRODUCTS:\n"
+            stats_msg += f"  Total: {prod_stats[0]}\n"
+            stats_msg += f"  With Embeddings: {prod_stats[1]} ({prod_stats[1]/prod_stats[0]*100 if prod_stats[0] > 0 else 0:.1f}%)\n"
+            stats_msg += f"  Avg Embedding Size: {prod_stats[2]/1024 if prod_stats[2] else 0:.1f} KB\n\n"
+            
+            stats_msg += f"KNOWLEDGE BASE:\n"
+            stats_msg += f"  Total: {kb_stats[0]}\n"
+            stats_msg += f"  With Embeddings: {kb_stats[1]} ({kb_stats[1]/kb_stats[0]*100 if kb_stats[0] > 0 else 0:.1f}%)\n"
+            stats_msg += f"  Avg Embedding Size: {kb_stats[2]/1024 if kb_stats[2] else 0:.1f} KB\n\n"
+            
+            stats_msg += "BY CATEGORY:\n"
+            for cat, total, with_emb in category_stats:
+                stats_msg += f"  {cat}: {with_emb}/{total} ({with_emb/total*100 if total > 0 else 0:.0f}%)\n"
+            
+            # Show in a dialog
+            stats_window = tk.Toplevel(self.root)
+            stats_window.title("Embedding Statistics")
+            stats_window.geometry("400x400")
+            
+            text_widget = scrolledtext.ScrolledText(stats_window, wrap=tk.WORD, font=self.vietnamese_font)
+            text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            text_widget.insert(tk.END, stats_msg)
+            text_widget.config(state=tk.DISABLED)
+            
+            ttk.Button(stats_window, text="Close", command=stats_window.destroy).pack(pady=5)
+            
+        except Exception as e:
+            self.logger.error(f"Error showing embedding stats: {e}")
+            messagebox.showerror("Error", f"Error showing statistics: {e}")
+            
     def setup_analytics_tab(self):
         """Setup analytics interface"""
         analytics_frame = ttk.Frame(self.notebook)
@@ -3284,20 +4502,25 @@ class VietnameseAISalesBot:
                 daemon=True
             ).start()
             
+    # Update the process_files_worker method to save files
     def process_files_worker(self, files, file_type):
         """Worker thread for processing files with RTX 4090 optimization"""
         for file_path in files:
             try:
                 self.update_training_status(f"🔄 RTX 4090 processing: {os.path.basename(file_path)}")
                 
+                # Save file to Upload Files folder
+                saved_path = self.save_uploaded_file(file_path, file_type)
+                
+                # Update database references to use saved path
                 if file_type == 'excel':
-                    self.process_excel_file(file_path)
+                    self.process_excel_file_with_tracking(saved_path)
                 elif file_type == 'pdf':
-                    self.process_pdf_file(file_path)
+                    self.process_pdf_file_with_tracking(saved_path)
                 elif file_type == 'word':
-                    self.process_word_file(file_path)
+                    self.process_word_file_with_tracking(saved_path)
                 elif file_type == 'image':
-                    self.process_image_file(file_path)
+                    self.process_image_file_with_tracking(saved_path)
                     
                 self.update_training_status(f"✅ RTX 4090 completed: {os.path.basename(file_path)}")
                 
@@ -3745,10 +4968,7 @@ class VietnameseAISalesBot:
     
     def run(self):
         """Start the application with comprehensive error handling"""
-        try:
-            print("📦 Adding sample products...")
-            self.add_sample_products()
-            
+        try:                       
             print("📋 Loading existing products to tabs...")
             self.load_existing_products_to_tabs()
             
@@ -3823,79 +5043,96 @@ class VietnameseAISalesBot:
             
     def add_sample_products(self):
         """Add sample SSD, Memory, and Motherboard products from Excel template"""
-        sample_products = [
-            # SSD Products - matching Database tab fields exactly
-            {
-                'product': 'SSD (SOLID STATE DRIVE)',     # Sản phẩm
-                'interface': 'M2 NVMe',                   # Giao thức
-                'model': 'E130 256GB',                    # Model
-                'specifications': '3200M/s Read 2700MB Write',  # Thông số
-                'stock_status': 'Còn hàng',               # Kho
-                'price': '600000',                        # Giá bán lẻ
-                'category': 'SSD'
-            },
-            {
-                'product': 'SSD (SOLID STATE DRIVE)',
-                'interface': 'M2 NVME',
-                'model': 'E130 512GB',
-                'specifications': 'Speed 3500M/s Read 3200MB Write',
-                'stock_status': 'Còn hàng',
-                'price': '900000',
-                'category': 'SSD'
-            },
-            # Memory Products - matching Database tab fields
-            {
-                'product': 'Desktop Memory',
-                'interface': 'DDR4 UDIMM',
-                'model': 'U3200I-C22 16GB',
-                'specifications': '3200Mhz 1.2V (Jedec), CAS Latency 22 chỉ tương thích với CPU Intel',
-                'stock_status': 'còn hàng',
-                'price': '600000',
-                'category': 'Memory'
-            },
-            {
-                'product': 'Laptop Memory',
-                'interface': 'DDR4 SODIM',
-                'model': 'S3200I-C22 8GB',
-                'specifications': '3200Mhz 1.2V (Jedec) CAS Latency 22 chỉ tương thích với CPU Intel',
-                'stock_status': 'Còn hàng',
-                'price': '400000',
-                'category': 'Memory'
-            },
-            {
-                'product': 'Desktop Memory',
-                'interface': 'DDR5 UDIMM',
-                'model': 'U5600-C46 16GB',
-                'specifications': '5600Mh 1.1V (Jedec) CAS Latency 46 tương thích với CPU Intel và AMD',
-                'stock_status': 'còn hàng',
-                'price': '1300000',
-                'category': 'Memory'
-            },
-            # Motherboard Products - note: uses 'chipset' instead of 'interface'
-            {
-                'product': 'Intel Motherboard',
-                'chipset': 'H610',                # Note: Motherboard uses 'chipset' not 'interface'
-                'model': 'H610M-HDV',
-                'specifications': 'Hỗ trợ CPU Intel thế hệ 12 13 14, sử dụng DDR4 cổng xuất hình: HDMI, Display Port, VGA. 2 USB 3.2, 2 USB 2.0',
-                'stock_status': 'Còn hàng',
-                'price': '1650000',
-                'category': 'Motherboard'
-            },
-            {
-                'product': 'Intel Motherboard',
-                'chipset': 'B760',
-                'model': 'B760M-HDV',
-                'specifications': 'Hỗ trợ CPU Intel thế hệ 12 13 14, sử dụng DDR4 cổng xuất hình: HDMI, Display Port, VGA. 4 USB 3.2, 2 USB 2.0, Có đèn led chẩn đoán lỗi.',
-                'stock_status': 'Còn hàng',
-                'price': '1890000',
-                'category': 'Motherboard'
-            }
-        ]
-        
         try:
             cursor = self.conn.cursor()
+            
+            # DON'T CHECK FOR EXISTING SAMPLE DATA - CHECK EACH PRODUCT INDIVIDUALLY
+            
+            sample_products = [
+                # SSD Products - matching Database tab fields exactly
+                {
+                    'product': 'SSD (SOLID STATE DRIVE)',     # Sản phẩm
+                    'interface': 'M2 NVMe',                   # Giao thức
+                    'model': 'E130 256GB',                    # Model
+                    'specifications': '3200M/s Read 2700MB Write',  # Thông số
+                    'stock_status': 'Còn hàng',               # Kho
+                    'price': '600000',                        # Giá bán lẻ
+                    'category': 'SSD'
+                },
+                {
+                    'product': 'SSD (SOLID STATE DRIVE)',
+                    'interface': 'M2 NVME',
+                    'model': 'E130 512GB',
+                    'specifications': 'Speed 3500M/s Read 3200MB Write',
+                    'stock_status': 'Còn hàng',
+                    'price': '900000',
+                    'category': 'SSD'
+                },
+                # Memory Products - matching Database tab fields
+                {
+                    'product': 'Desktop Memory',
+                    'interface': 'DDR4 UDIMM',
+                    'model': 'U3200I-C22 16GB',
+                    'specifications': '3200Mhz 1.2V (Jedec), CAS Latency 22 chỉ tương thích với CPU Intel',
+                    'stock_status': 'còn hàng',
+                    'price': '600000',
+                    'category': 'Memory'
+                },
+                {
+                    'product': 'Laptop Memory',
+                    'interface': 'DDR4 SODIM',
+                    'model': 'S3200I-C22 8GB',
+                    'specifications': '3200Mhz 1.2V (Jedec) CAS Latency 22 chỉ tương thích với CPU Intel',
+                    'stock_status': 'Còn hàng',
+                    'price': '400000',
+                    'category': 'Memory'
+                },
+                {
+                    'product': 'Desktop Memory',
+                    'interface': 'DDR5 UDIMM',
+                    'model': 'U5600-C46 16GB',
+                    'specifications': '5600Mh 1.1V (Jedec) CAS Latency 46 tương thích với CPU Intel và AMD',
+                    'stock_status': 'còn hàng',
+                    'price': '1300000',
+                    'category': 'Memory'
+                },
+                # Motherboard Products - note: uses 'chipset' instead of 'interface'
+                {
+                    'product': 'Intel Motherboard',
+                    'chipset': 'H610',                # Note: Motherboard uses 'chipset' not 'interface'
+                    'model': 'H610M-HDV',
+                    'specifications': 'Hỗ trợ CPU Intel thế hệ 12 13 14, sử dụng DDR4 cổng xuất hình: HDMI, Display Port, VGA. 2 USB 3.2, 2 USB 2.0',
+                    'stock_status': 'Còn hàng',
+                    'price': '1650000',
+                    'category': 'Motherboard'
+                },
+                {
+                    'product': 'Intel Motherboard',
+                    'chipset': 'B760',
+                    'model': 'B760M-HDV',
+                    'specifications': 'Hỗ trợ CPU Intel thế hệ 12 13 14, sử dụng DDR4 cổng xuất hình: HDMI, Display Port, VGA. 4 USB 3.2, 2 USB 2.0, Có đèn led chẩn đoán lỗi.',
+                    'stock_status': 'Còn hàng',
+                    'price': '1890000',
+                    'category': 'Motherboard'
+                }
+            ]
+            
+            added_count = 0
+            skipped_count = 0
+            
             for product in sample_products:
                 try:
+                    # CHECK IF THIS SPECIFIC PRODUCT ALREADY EXISTS
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM products 
+                        WHERE name = ? AND category = ?
+                    """, (product.get('model', ''), product.get('category', '')))
+                    
+                    if cursor.fetchone()[0] > 0:
+                        print(f"⏭️ Skipping {product.get('model', '')} - already exists")
+                        skipped_count += 1
+                        continue
+                    
                     # Build text for embedding - using exact fields
                     combined_text = f"{product.get('product', '')} {product.get('model', '')} {product.get('specifications', '')}"
                     
@@ -3932,12 +5169,24 @@ class VietnameseAISalesBot:
                         datetime.now().isoformat()
                     ))
                     
+                    if cursor.rowcount > 0:
+                        added_count += 1
+                        
                 except Exception as e:
                     self.logger.error(f"Error inserting sample product {product.get('model', 'unknown')}: {e}")
                     continue
             
             self.conn.commit()
-            print("✅ Sample products added successfully with exact Database tab field structure")
+            
+            if added_count > 0:
+                print(f"✅ Added {added_count} new sample products")
+            if skipped_count > 0:
+                print(f"⏭️ Skipped {skipped_count} existing sample products")
+            if added_count == 0 and skipped_count == 0:
+                print("✅ No sample products to add (list is empty)")
+            
+            # Return summary for logging
+            return {'added': added_count, 'skipped': skipped_count, 'total': len(sample_products)}
             
         except Exception as e:
             self.logger.error(f"Error adding sample products: {e}")
@@ -4244,21 +5493,21 @@ class VietnameseAISalesBot:
                 self.show_message("Error", "Unknown product category")
                 return
             
-            # Get selected items (can be multiple)
+            # Get selected items
             selected_items = tree_widget.selection()
             if not selected_items:
                 self.show_message("Warning", "Please select item(s) to remove")
                 return
             
-            # Collect items to delete
+            # Collect items to delete with their specific identifiers
             items_to_delete = []
             for item in selected_items:
                 item_values = tree_widget.item(item, 'values')
                 if item_values and len(item_values) >= 4:
                     items_to_delete.append({
                         'tree_item': item,
-                        'product': item_values[1],
-                        'model': item_values[3]
+                        'product': item_values[1],  # Product name/description
+                        'model': item_values[3]     # Model name (unique identifier)
                     })
             
             if not items_to_delete:
@@ -4276,26 +5525,31 @@ class VietnameseAISalesBot:
             result = messagebox.askyesno("Confirm Deletion", message)
             
             if result:
-                # Delete from database
                 cursor = self.conn.cursor()
                 total_deleted = 0
                 
                 for item in items_to_delete:
+                    # DELETE ONLY THE SPECIFIC ITEM BY NAME AND CATEGORY
                     cursor.execute("""
                         DELETE FROM products 
-                        WHERE (name = ? OR description = ?) AND category = ?
-                    """, (item['model'], item['product'], category))
-                    total_deleted += cursor.rowcount
+                        WHERE name = ? AND category = ?
+                    """, (item['model'], category))
                     
-                    # Remove from TreeView
-                    tree_widget.delete(item['tree_item'])
+                    deleted_count = cursor.rowcount
+                    total_deleted += deleted_count
+                    
+                    # Remove from TreeView only if database deletion was successful
+                    if deleted_count > 0:
+                        tree_widget.delete(item['tree_item'])
+                    
+                    print(f"Deleted {item['model']} from {category} - {deleted_count} row(s) affected")
                 
                 self.conn.commit()
                 
                 if total_deleted > 0:
                     self.show_message("Success", f"Removed {total_deleted} product(s) successfully")
-                    # Refresh to update row numbers
-                    self.view_database_contents(category)
+                    # Refresh the tree to update row numbers
+                    self.refresh_category_view_after_import(category)
                 else:
                     self.show_message("Warning", "No products were removed from database")
                     
@@ -5139,16 +6393,18 @@ def main():
         print("\n=== Checking Database Contents ===")
         chatbot.check_database_contents()
         
-        # Add sample products
-        chatbot.add_sample_products()
+        # Load products from JSON instead of hardcoded
+        if os.path.exists('data/products.json'):
+            print("📋 Loading products from JSON template...")
+            chatbot.data_manager.load_products_from_json('data/products.json')
+        else:
+            print("⚠️ No products.json found, creating sample...")
+            # Optionally create sample file
         
         # Check again after adding samples
         print("\n=== After Adding Sample Products ===")
-        chatbot.check_database_contents()
+        chatbot.check_database_contents()              
         
-        # Add RTX 4090 sample products
-        print("📦 Adding RTX 4090 sample products...")
-        chatbot.add_sample_products()
         # DEBUG CODE for add_sample_products()
         cursor = chatbot.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM products")
